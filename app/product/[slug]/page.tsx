@@ -2,23 +2,19 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { ProductDetail } from "./product-detail"
 import { ProductRail } from "@/components/store/product-rail"
-import { getProduct, PRODUCTS } from "@/lib/data"
-
-export const generateStaticParams = () => PRODUCTS.map((p) => ({ slug: p.slug }))
+import { getProduct, getReviews } from "@/lib/api"
 
 export async function generateMetadata({ params }: PageProps<"/product/[slug]">): Promise<Metadata> {
-  const p = getProduct((await params).slug)
-  return p ? { title: `${p.name} | FIELDWEAR`, description: p.blurb } : {}
+  const p = await getProduct((await params).slug)
+  return p ? { title: `${p.name} | MyWear`, description: p.blurb } : {}
 }
 
 export default async function Page({ params, searchParams }: PageProps<"/product/[slug]">) {
-  const product = getProduct((await params).slug)
+  const { slug } = await params
+  const [product, reviews] = await Promise.all([getProduct(slug), getReviews(slug).catch(() => null)])
   if (!product) notFound()
   const { color } = await searchParams
-
-  const others = PRODUCTS.filter((p) => p.slug !== product.slug)
-  const look = others.filter((p) => p.gender === product.gender).slice(0, 6)
-  const also = others.filter((p) => p.sport === product.sport).slice(0, 6)
+  const inStock = product.sizes.some((s) => s.stock > 0)
 
   // PDP-15 structured data
   const jsonLd = {
@@ -26,17 +22,22 @@ export default async function Page({ params, searchParams }: PageProps<"/product
     "@type": "Product",
     name: product.name,
     description: product.blurb,
-    offers: { "@type": "Offer", priceCurrency: "IDR", price: product.salePrice ?? product.price, availability: "https://schema.org/InStock" },
-    aggregateRating: { "@type": "AggregateRating", ratingValue: product.rating, reviewCount: product.reviews },
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "IDR",
+      price: product.salePrice ?? product.price,
+      availability: `https://schema.org/${inStock ? "InStock" : "OutOfStock"}`,
+    },
+    ...(product.reviews > 0 && { aggregateRating: { "@type": "AggregateRating", ratingValue: product.rating, reviewCount: product.reviews } }),
   }
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <ProductDetail product={product} initialColor={typeof color === "string" ? color : undefined} />
+      <ProductDetail product={product} reviews={reviews} initialColor={typeof color === "string" ? color : undefined} />
       <div className="mt-20 space-y-20 md:mt-28">
-        <ProductRail title="Complete the look" products={look} />
-        <ProductRail title="You may also like" products={also} />
+        <ProductRail title="Complete the look" products={product.completeTheLook} />
+        <ProductRail title="You may also like" products={product.youMayAlsoLike} />
       </div>
     </>
   )

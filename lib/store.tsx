@@ -1,27 +1,96 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { getProduct, type Product } from "@/lib/data"
-import { checkPromo, lineTotal, promoDiscount } from "@/lib/pricing"
+import { api, getProducts, refreshSession, setAccessToken, type User } from "@/lib/api"
+import type { Product } from "@/lib/data"
 
-export type CartLine = { slug: string; color: string; size: string; qty: number }
-export type Overlay = "bag" | "wishlist" | "search" | "auth" | null
+/** One line in GET /cart */
+export type CartItem = {
+  id: string
+  skuId: string
+  slug: string
+  name: string
+  color: string
+  colorHex: string
+  colorTone: string
+  size: string
+  image?: string
+  price: number
+  salePrice?: number
+  unitPrice: number
+  qty: number
+  lineTotal: number
+  available: number
+  maxQty: number
+  voucherEligible: boolean
+  issue: "sold_out" | "low_stock" | null
+}
 
-type Store = {
-  lines: (CartLine & { product: Product })[]
+export type Cart = {
+  items: CartItem[]
   count: number
   subtotal: number
-  promo: string | null
   discount: number
-  applyPromo: (code: string | null) => string | null
-  add: (line: Omit<CartLine, "qty">, qty?: number) => void
-  setQty: (i: number, qty: number) => void
-  remove: (i: number) => CartLine
-  clear: () => void
+  delivery: number
+  total: number
+  freeDeliveryRemaining: number
+  promoCode: string | null
+  promoError: string | null
+  deliveryOptions: { standard: number; express: number }
+}
+
+export type Overlay = "bag" | "wishlist" | "search" | "auth" | "join" | null
+export type BagInput = { slug: string; color: string; size: string }
+type Credentials = { name?: string; email: string; password: string }
+
+const EMPTY_CART: Cart = {
+  items: [],
+  count: 0,
+  subtotal: 0,
+  discount: 0,
+  delivery: 0,
+  total: 0,
+  freeDeliveryRemaining: 500_000,
+  promoCode: null,
+  promoError: null,
+  deliveryOptions: { standard: 0, express: 0 },
+}
+
+// Signed-out wishlist: slugs in localStorage, merged into the account on sign-in (PLP-8)
+const LOCAL_WISHLIST = "MyWear-wishlist"
+const readLocal = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_WISHLIST) ?? "[]") as string[]
+  } catch {
+    return []
+  }
+}
+const writeLocal = (slugs: string[]) => {
+  try {
+    if (slugs.length) localStorage.setItem(LOCAL_WISHLIST, JSON.stringify(slugs))
+    else localStorage.removeItem(LOCAL_WISHLIST)
+  } catch {}
+}
+
+type Store = {
+  user: User | null
+  /** False until the saved session, bag and wishlist have loaded */
+  ready: boolean
+  signIn: (mode: "login" | "register", credentials: Credentials) => Promise<User>
+  signOut: () => Promise<void>
+
+  cart: Cart
+  addToBag: (item: BagInput, qty?: number) => Promise<void>
+  setQty: (itemId: string, qty: number) => Promise<void>
+  removeItem: (itemId: string) => Promise<void>
+  clearBag: () => Promise<void>
+  applyPromo: (code: string) => Promise<void>
+  removePromo: () => Promise<void>
+  refreshCart: () => Promise<void>
 
   wishlist: Product[]
   isSaved: (slug: string) => boolean
-  setSaved: (slug: string, on: boolean) => void
+  setSaved: (slug: string, on: boolean) => Promise<void>
 
   overlay: Overlay
   open: (o: Overlay) => void
@@ -31,84 +100,91 @@ type Store = {
 
 const StoreContext = createContext<Store | null>(null)
 
-const read = <T,>(key: string, fallback: T): T => {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? "") as T
-  } catch {
-    return fallback
-  }
-}
-const write = (key: string, value: unknown) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-  } catch {}
-}
-
-// ponytail: bag + wishlist live in localStorage; swap for /cart and /me/wishlist (BAG-7, PLP-8) once the API exists
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [raw, setRaw] = useState<CartLine[]>([])
-  const [saved, setSaved] = useState<string[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [ready, setReady] = useState(false)
+  const [cart, setCart] = useState<Cart>(EMPTY_CART)
+  const [wishlist, setWishlist] = useState<Product[]>([])
+  const [saved, setSavedSlugs] = useState<string[]>([])
   const [overlay, open] = useState<Overlay>(null)
   const [quickView, openQuickView] = useState<string | null>(null)
-  const [promo, setPromo] = useState<string | null>(null)
 
+  const refreshCart = async () => setCart(await api<Cart>("/cart"))
+
+  const showWishlist = (products: Product[]) => {
+    setWishlist(products)
+    setSavedSlugs(products.map((p) => p.slug))
+  }
+
+  const loadWishlist = async (signedIn: boolean) => {
+    if (signedIn) return showWishlist(await api<Product[]>("/me/wishlist"))
+    const slugs = readLocal()
+    setSavedSlugs(slugs)
+    if (!slugs.length) return setWishlist([])
+    const { items } = await getProducts({ slugs: slugs.join(","), limit: 60 })
+    setWishlist(slugs.flatMap((s) => items.find((p) => p.slug === s) ?? []))
+  }
+
+  // Restore the session from the refresh cookie, then load the bag and wishlist
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- hydrate from storage after mount */
-    setRaw(read("fieldwear-bag", []))
-    setSaved(read("fieldwear-wishlist", []))
-    /* eslint-enable react-hooks/set-state-in-effect */
+    void (async () => {
+      const restored = await refreshSession()
+      setUser(restored)
+      await Promise.allSettled([refreshCart(), loadWishlist(!!restored)])
+      setReady(true)
+    })()
+    try {
+      localStorage.removeItem("MyWear-bag") // pre-API bag; the bag lives on the server now
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Functional updates so actions fired later (e.g. a toast's Undo) apply to the latest bag, not a stale render
-  const updateBag = (fn: (prev: CartLine[]) => CartLine[]) =>
-    setRaw((prev) => {
-      const next = fn(prev)
-      write("fieldwear-bag", next)
-      return next
-    })
-  const setSavedTo = (slug: string, on: boolean) =>
-    setSaved((prev) => {
-      const next = on ? [slug, ...prev.filter((s) => s !== slug)] : prev.filter((s) => s !== slug)
-      write("fieldwear-wishlist", next)
-      return next
-    })
-
-  const lines = raw.flatMap((l) => {
-    const product = getProduct(l.slug)
-    return product ? [{ ...l, product }] : []
-  })
-
   const value: Store = {
-    lines,
-    count: lines.reduce((n, l) => n + l.qty, 0),
-    subtotal: lines.reduce((n, l) => n + lineTotal(l), 0),
-    promo,
-    discount: promoDiscount(lines, promo),
-    applyPromo: (code) => {
-      if (code === null) {
-        setPromo(null)
-        return null
-      }
-      const error = checkPromo(lines, code)
-      if (!error) setPromo(code.trim().toUpperCase())
-      return error
+    user,
+    ready,
+    signIn: async (mode, credentials) => {
+      const { accessToken, user: me } = await api<{ accessToken: string; user: User }>(`/auth/${mode}`, { method: "POST", body: credentials })
+      setAccessToken(accessToken)
+      setUser(me)
+      // The API folds the guest bag into the account on sign-in; bring over the local wishlist too
+      const local = readLocal()
+      const merged = local.length ? await api<Product[]>("/me/wishlist/merge", { method: "POST", body: { slugs: local } }) : await api<Product[]>("/me/wishlist")
+      writeLocal([])
+      showWishlist(merged)
+      await refreshCart()
+      return me
     },
-    add: (line, qty = 1) =>
-      updateBag((prev) => {
-        const i = prev.findIndex((l) => l.slug === line.slug && l.color === line.color && l.size === line.size)
-        if (i === -1) return [...prev, { slug: line.slug, color: line.color, size: line.size, qty }]
-        return prev.map((l, j) => (j === i ? { ...l, qty: Math.min(10, l.qty + qty) } : l))
-      }),
-    setQty: (i, qty) => updateBag((prev) => prev.map((l, j) => (j === i ? { ...l, qty: Math.max(1, Math.min(10, qty)) } : l))),
-    remove: (i) => {
-      updateBag((prev) => prev.filter((_, j) => j !== i))
-      return raw[i]
+    signOut: async () => {
+      await api("/auth/logout", { method: "POST" }).catch(() => undefined)
+      setAccessToken(null)
+      setUser(null)
+      showWishlist([])
+      await refreshCart().catch(() => setCart(EMPTY_CART))
     },
-    clear: () => updateBag(() => []),
 
-    wishlist: saved.flatMap((s) => getProduct(s) ?? []),
+    cart,
+    addToBag: async (item, qty = 1) => setCart(await api<Cart>("/cart/items", { method: "POST", body: { ...item, qty } })),
+    setQty: async (itemId, qty) => setCart(await api<Cart>(`/cart/items/${itemId}`, { method: "PATCH", body: { qty } })),
+    removeItem: async (itemId) => setCart(await api<Cart>(`/cart/items/${itemId}`, { method: "DELETE" })),
+    clearBag: async () => setCart(await api<Cart>("/cart", { method: "DELETE" })),
+    applyPromo: async (code) => setCart(await api<Cart>("/cart/promo", { method: "POST", body: { code } })),
+    removePromo: async () => setCart(await api<Cart>("/cart/promo", { method: "DELETE" })),
+    refreshCart,
+
+    wishlist,
     isSaved: (slug) => saved.includes(slug),
-    setSaved: setSavedTo,
+    setSaved: async (slug, on) => {
+      const before = saved
+      setSavedSlugs(on ? [slug, ...saved.filter((s) => s !== slug)] : saved.filter((s) => s !== slug)) // optimistic heart
+      try {
+        if (user) await api(`/me/wishlist/${encodeURIComponent(slug)}`, { method: on ? "PUT" : "DELETE" })
+        else writeLocal(on ? [slug, ...readLocal().filter((s) => s !== slug)] : readLocal().filter((s) => s !== slug))
+        await loadWishlist(!!user)
+      } catch (e) {
+        setSavedSlugs(before)
+        throw e
+      }
+    },
 
     overlay,
     open,

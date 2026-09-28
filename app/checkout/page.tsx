@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Check, ChevronDown, CreditCard, Landmark, Loader2, Lock, ShoppingBag, Wallet } from "lucide-react"
+import { toast } from "sonner"
 import { Accordion, AccordionContent, AccordionItem } from "@/components/ui/accordion"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChoiceCard, ChoiceGroup } from "@/components/store/choice-card"
@@ -12,9 +13,9 @@ import { EmptyState } from "@/components/store/empty-state"
 import { FormField, validateForm } from "@/components/store/form-field"
 import { OrderSummary, PromoCodeForm } from "@/components/store/order-summary"
 import { ProductImage } from "@/components/store/product-image"
-import { useStore } from "@/lib/store"
+import { api, ApiError, messageOf, type CheckoutResult } from "@/lib/api"
 import { formatIDR } from "@/lib/data"
-import { deliveryFee, EXPRESS_DELIVERY, STANDARD_DELIVERY } from "@/lib/pricing"
+import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 const STEPS = ["Contact", "Delivery", "Payment", "Review"] as const
@@ -63,7 +64,9 @@ export default function CheckoutPage() {
   const [summaryOpen, setSummaryOpen] = useState(false)
 
   const express = method === "express"
-  const total = store.subtotal + deliveryFee(store.subtotal, express) - store.discount
+  const { cart } = store
+  const fees = cart.deliveryOptions
+  const total = cart.subtotal - cart.discount + (express ? fees.express : fees.standard)
 
   const next = (current: Step) => (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -77,15 +80,41 @@ export default function CheckoutPage() {
 
   const place = async () => {
     setPlacing(true)
-    // ponytail: no payment gateway yet (CHK-5); simulate the hand-off and a fake order id
-    await new Promise((r) => setTimeout(r, 1200))
-    const id = `FW${Date.now().toString().slice(-8)}`
-    store.clear()
-    store.applyPromo(null)
-    router.push(`/order/${id}/confirmation`)
+    try {
+      const { order, payment: gateway } = await api<CheckoutResult>("/checkout", {
+        method: "POST",
+        body: {
+          email: data.email,
+          phone: data.phone,
+          deliveryMethod: method,
+          paymentMethod: payment,
+          address: { firstName: data.firstName, lastName: data.lastName, line1: data.line1, line2: data.line2 || undefined, city: data.city, postcode: data.postcode },
+        },
+      })
+      // ponytail: development gateway. A real provider (CHK-5) returns a hosted payment page to redirect to instead.
+      if (gateway.confirmUrl) await api(gateway.confirmUrl.replace(/^\/api/, ""), { method: "POST", body: {} })
+      try {
+        // The confirmation page reads this; the order number in the URL is not enough to show details to a guest
+        sessionStorage.setItem("mw-last-order", JSON.stringify({ ...order, status: gateway.confirmUrl ? "paid" : order.status }))
+      } catch {}
+      await store.refreshCart().catch(() => undefined)
+      router.push(`/order/${order.number}/confirmation`)
+    } catch (e) {
+      setPlacing(false)
+      toast.error(messageOf(e))
+      // stock or promo changed under us: reload the bag so its warnings show
+      if (e instanceof ApiError && (e.status === 409 || e.status === 422)) await store.refreshCart().catch(() => undefined)
+    }
   }
 
-  if (store.lines.length === 0 && !placing)
+  if (!store.ready)
+    return (
+      <div className="flex justify-center py-24" aria-busy="true" aria-label="Loading checkout">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+
+  if (cart.items.length === 0 && !placing)
     return (
       <EmptyState icon={<ShoppingBag />} title="Your bag is empty" body="Add something to your bag before checking out." className="py-24">
         <Link href="/" className={cn(buttonVariants(), "h-12 w-full font-heading text-base font-semibold")}>
@@ -96,19 +125,19 @@ export default function CheckoutPage() {
 
   const summaryLines = (
     <ul className="space-y-4">
-      {store.lines.map((l) => (
-        <li key={`${l.slug}${l.color}${l.size}`} className="flex gap-3 text-sm">
+      {cart.items.map((l) => (
+        <li key={l.id} className="flex gap-3 text-sm">
           <div className="relative w-16 shrink-0">
-            <ProductImage color={l.product.colors.find((c) => c.name === l.color) ?? l.product.colors[0]} alt="" />
+            <ProductImage color={{ name: l.color, hex: l.colorHex, tone: l.colorTone, image: l.image }} alt="" />
             <span className="tabular absolute -top-2 -right-2 grid size-5 place-items-center rounded-full bg-foreground text-[11px] text-background">{l.qty}</span>
           </div>
           <div className="flex-1">
-            <p className="leading-snug font-medium">{l.product.name}</p>
+            <p className="leading-snug font-medium">{l.name}</p>
             <p className="text-xs text-muted-foreground">
               {l.color}, {l.size}
             </p>
           </div>
-          <p className="tabular">{formatIDR((l.product.salePrice ?? l.product.price) * l.qty)}</p>
+          <p className="tabular">{formatIDR(l.lineTotal)}</p>
         </li>
       ))}
     </ul>
@@ -158,8 +187,8 @@ export default function CheckoutPage() {
               <StepHeading step="Contact" current={step} done={done.includes("Contact")} onEdit={() => setStep("Contact")} summary={summaries.Contact} />
               <AccordionContent>
                 <form noValidate onSubmit={next("Contact")} className="grid gap-4 pb-8">
-                  <FormField name="email" label="Email" type="email" required data-label="email" autoComplete="email" hint="For your receipt and delivery updates" defaultValue={data.email} error={errors.email} />
-                  <FormField name="phone" label="Phone" type="tel" required pattern="[0-9 +]{9,16}" data-label="phone number" autoComplete="tel" defaultValue={data.phone} error={errors.phone} />
+                  <FormField name="email" label="Email" type="email" required data-label="email" autoComplete="email" hint="For your receipt and delivery updates" defaultValue={data.email ?? store.user?.email} error={errors.email} />
+                  <FormField name="phone" label="Phone" type="tel" required pattern="[0-9 +]{9,16}" data-label="phone number" autoComplete="tel" defaultValue={data.phone ?? store.user?.phone ?? undefined} error={errors.phone} />
                   <Button type="submit" className="mt-2 h-13 font-heading text-lg font-semibold active:scale-[0.99]">
                     Continue to delivery
                   </Button>
@@ -172,8 +201,8 @@ export default function CheckoutPage() {
               <AccordionContent>
                 <form noValidate onSubmit={next("Delivery")} className="grid gap-4 pb-8 sm:grid-cols-2">
                   <ChoiceGroup label="Delivery method" value={method} onChange={setMethod} className="grid gap-2 sm:col-span-2">
-                    <ChoiceCard value="standard" title="Standard delivery" detail="2 to 4 working days" aside={deliveryFee(store.subtotal) ? formatIDR(STANDARD_DELIVERY) : "Free"} />
-                    <ChoiceCard value="express" title="Express delivery" detail="Next working day in Jabodetabek" aside={formatIDR(EXPRESS_DELIVERY)} />
+                    <ChoiceCard value="standard" title="Standard delivery" detail="2 to 4 working days" aside={fees.standard ? formatIDR(fees.standard) : "Free"} />
+                    <ChoiceCard value="express" title="Express delivery" detail="Next working day in Jabodetabek" aside={fees.express ? formatIDR(fees.express) : "Free"} />
                   </ChoiceGroup>
                   <FormField name="firstName" label="First name" required data-label="first name" autoComplete="given-name" defaultValue={data.firstName} error={errors.firstName} />
                   <FormField name="lastName" label="Last name" required data-label="last name" autoComplete="family-name" defaultValue={data.lastName} error={errors.lastName} />

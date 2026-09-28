@@ -5,7 +5,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 import { motion, useMotionValueEvent, useScroll } from "motion/react"
-import { ArrowRight, ChevronRight, Heart, Lock, Menu, Package, Search, ShoppingBag, User } from "lucide-react"
+import { ArrowRight, ChevronRight, Heart, Lock, LogOut, Menu, Search, ShoppingBag, User } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -22,52 +23,58 @@ const hrefFor = (item: string) => {
 export function Logo() {
   return (
     <Link href="/" className="font-heading text-2xl font-bold tracking-[0.08em] uppercase">
-      Fieldwear
+      MyWear
     </Link>
   )
 }
 
 function AccountMenu() {
-  const { open } = useStore()
+  const { open, user, signOut } = useStore()
   return (
     <Popover>
       <PopoverTrigger
         render={
-          <button type="button" aria-label="Account" className="hidden size-11 place-items-center transition-transform active:scale-95 md:grid">
+          <button type="button" aria-label={user ? `Account, signed in as ${user.name}` : "Account"} className="relative hidden size-11 place-items-center transition-transform active:scale-95 md:grid">
             <User className="size-6" strokeWidth={1.5} />
+            {user && <span aria-hidden className="absolute right-2 bottom-2 size-2 rounded-full bg-success ring-2 ring-background" />}
           </button>
         }
       />
       <PopoverContent align="end" sideOffset={8} className="w-72 gap-4 p-5 shadow-[0_8px_30px_rgba(17,17,17,.12)]">
-        <div>
-          <p className="font-heading text-xl font-bold">Hello there</p>
-          <p className="text-sm text-muted-foreground">Sign in for order tracking and faster checkout.</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button onClick={() => open("auth")} className="h-11 font-semibold">
-            Sign in
-          </Button>
-          <Button variant="outline" onClick={() => open("auth")} className="h-11 border-foreground font-semibold">
-            Join
-          </Button>
-        </div>
+        {user ? (
+          <div>
+            <p className="font-heading text-xl font-bold">Hi, {user.name.split(" ")[0]}</p>
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <p className="font-heading text-xl font-bold">Hello there</p>
+              <p className="text-sm text-muted-foreground">Sign in for order tracking and faster checkout.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button onClick={() => open("auth")} className="h-11 font-semibold">
+                Sign in
+              </Button>
+              <Button variant="outline" onClick={() => open("join")} className="h-11 border-foreground font-semibold">
+                Join
+              </Button>
+            </div>
+          </>
+        )}
         <div className="-mx-2 border-t pt-2">
-          {[
-            [Package, "Order status"],
-            [Heart, "Wishlist"],
-          ].map(([Icon, label]) => {
-            const I = Icon as typeof Package
-            return (
-              <button
-                key={label as string}
-                type="button"
-                onClick={() => label === "Wishlist" && open("wishlist")}
-                className="flex h-10 w-full items-center gap-3 px-2 text-sm hover:bg-mist"
-              >
-                <I className="size-4" strokeWidth={1.5} /> {label as string}
-              </button>
-            )
-          })}
+          <button type="button" onClick={() => open("wishlist")} className="flex h-10 w-full items-center gap-3 px-2 text-sm hover:bg-mist">
+            <Heart className="size-4" strokeWidth={1.5} /> Wishlist
+          </button>
+          {user && (
+            <button
+              type="button"
+              onClick={() => void signOut().then(() => toast("Signed out"))}
+              className="flex h-10 w-full items-center gap-3 px-2 text-sm hover:bg-mist"
+            >
+              <LogOut className="size-4" strokeWidth={1.5} /> Sign out
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -107,7 +114,7 @@ function MegaMenu({ gender }: { gender: string }) {
 
 export function SiteHeader() {
   const pathname = usePathname()
-  const { open, count, wishlist } = useStore()
+  const { open, cart, wishlist, user, signOut } = useStore()
   const { scrollY } = useScroll()
   const [hidden, setHidden] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -138,9 +145,15 @@ export function SiteHeader() {
           <nav aria-label="Utility" className="flex gap-5 text-background/80">
             <Link href="#" className="hover:text-background">Help</Link>
             <Link href="#" className="hover:text-background">Order status</Link>
-            <button type="button" onClick={() => open("auth")} className="hover:text-background">
-              Sign in
-            </button>
+            {user ? (
+              <button type="button" onClick={() => void signOut().then(() => toast("Signed out"))} className="hover:text-background">
+                Sign out ({user.name.split(" ")[0]})
+              </button>
+            ) : (
+              <button type="button" onClick={() => open("auth")} className="hover:text-background">
+                Sign in
+              </button>
+            )}
           </nav>
         </div>
       </div>
@@ -161,7 +174,7 @@ export function SiteHeader() {
               className="w-full max-w-sm gap-0 p-0"
               onClick={(e) => (e.target as HTMLElement).closest("a, button:not([data-slot=sheet-close])") && setMenuOpen(false)}
             >
-              <SheetTitle className="border-b p-5 font-heading text-xl font-bold tracking-[0.08em] uppercase">Fieldwear</SheetTitle>
+              <SheetTitle className="border-b p-5 font-heading text-xl font-bold tracking-[0.08em] uppercase">MyWear</SheetTitle>
               <div className="grid grid-cols-3 border-b">
                 {GENDERS.map((g) => (
                   <Link key={g} href={`/${g}/all`} className="py-3.5 text-center font-heading font-semibold tracking-wide uppercase hover:bg-mist">
@@ -178,14 +191,25 @@ export function SiteHeader() {
                   </li>
                 ))}
               </ul>
-              <div className="grid grid-cols-2 gap-2 border-t p-5">
-                <Button onClick={() => open("auth")} className="h-11 font-semibold">
-                  Sign in
-                </Button>
-                <Button variant="outline" onClick={() => open("auth")} className="h-11 border-foreground font-semibold">
-                  Join
-                </Button>
-              </div>
+              {user ? (
+                <div className="flex items-center justify-between gap-3 border-t p-5">
+                  <p className="truncate text-sm">
+                    Signed in as <b className="font-semibold">{user.name}</b>
+                  </p>
+                  <Button variant="outline" onClick={() => void signOut().then(() => toast("Signed out"))} className="h-11 border-foreground font-semibold">
+                    Sign out
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 border-t p-5">
+                  <Button onClick={() => open("auth")} className="h-11 font-semibold">
+                    Sign in
+                  </Button>
+                  <Button variant="outline" onClick={() => open("join")} className="h-11 border-foreground font-semibold">
+                    Join
+                  </Button>
+                </div>
+              )}
             </SheetContent>
           </Sheet>
 
@@ -227,7 +251,7 @@ export function SiteHeader() {
             <IconButton label="Wishlist" count={wishlist.length} onClick={() => open("wishlist")}>
               <Heart />
             </IconButton>
-            <IconButton label="Bag" count={count} onClick={() => open("bag")}>
+            <IconButton label="Bag" count={cart.count} onClick={() => open("bag")}>
               <ShoppingBag />
             </IconButton>
           </div>

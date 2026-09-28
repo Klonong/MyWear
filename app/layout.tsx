@@ -9,7 +9,7 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const barlow = Barlow_Condensed({ variable: "--font-barlow", subsets: ["latin"], weight: ["600", "700"] });
 
 export const metadata: Metadata = {
-  title: "FIELDWEAR | Sportswear & everyday clothing",
+  title: "MyWear | Sportswear & everyday clothing",
   description: "Running, training and lifestyle clothing for women, men and kids.",
 };
 

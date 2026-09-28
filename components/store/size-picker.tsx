@@ -12,10 +12,18 @@ import { cn } from "@/lib/utils"
 /** Size chips (design.md §3.5). Sold-out chips stay clickable and open the Notify me popup. */
 export const SizePicker = forwardRef<
   HTMLDivElement,
-  { product: Product; value: string | null; onChange: (s: string) => void; error?: boolean }
->(function SizePicker({ product, value, onChange, error }, ref) {
+  {
+    product: Product
+    /** Sizes (with stock) for the selected colour */
+    sizes: Product["sizes"]
+    colorName: string
+    value: string | null
+    onChange: (s: string) => void
+    error?: boolean
+  }
+>(function SizePicker({ product, sizes, colorName, value, onChange, error }, ref) {
   const [notify, setNotify] = useState<string | null>(null)
-  const selected = product.sizes.find((s) => s.label === value)
+  const selected = sizes.find((s) => s.label === value)
   const guideTab = product.gender === "kids" ? "Kids" : product.gender === "men" ? "Men" : "Women"
 
   return (
@@ -30,13 +38,13 @@ export const SizePicker = forwardRef<
         aria-labelledby={`${product.slug}-size`}
         value={value}
         onValueChange={(v) => {
-          const s = product.sizes.find((x) => x.label === v)!
+          const s = sizes.find((x) => x.label === v)!
           if (s.stock === 0) setNotify(s.label)
           else onChange(s.label)
         }}
         className="grid grid-cols-5 gap-2"
       >
-        {product.sizes.map((s) => {
+        {sizes.map((s) => {
           const out = s.stock === 0
           return (
             <Radio.Root
@@ -71,7 +79,7 @@ export const SizePicker = forwardRef<
           ) : null}
         </AnimatePresence>
       </div>
-      <NotifyMeDialog productName={product.name} size={notify} onClose={() => setNotify(null)} />
+      <NotifyMeDialog slug={product.slug} productName={product.name} color={colorName} size={notify} onClose={() => setNotify(null)} />
     </div>
   )
 })

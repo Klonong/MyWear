@@ -8,6 +8,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { EmptyState } from "@/components/store/empty-state"
 import { Price } from "@/components/store/price"
 import { ProductImage } from "@/components/store/product-image"
+import { toast } from "sonner"
+import { messageOf } from "@/lib/api"
 import { useStore } from "@/lib/store"
 
 export function WishlistSheet() {
@@ -37,7 +39,7 @@ export function WishlistSheet() {
                       <Link href={`/product/${p.slug}`} onClick={close} className="text-sm leading-snug hover:underline">
                         {p.name}
                       </Link>
-                      <button type="button" aria-label={`Remove ${p.name}`} onClick={() => setSaved(p.slug, false)} className="-mt-1 -mr-2 grid size-8 shrink-0 place-items-center hover:bg-mist">
+                      <button type="button" aria-label={`Remove ${p.name}`} onClick={() => void setSaved(p.slug, false).catch((e) => toast.error(messageOf(e)))} className="-mt-1 -mr-2 grid size-8 shrink-0 place-items-center hover:bg-mist">
                         <X className="size-4" />
                       </button>
                     </div>

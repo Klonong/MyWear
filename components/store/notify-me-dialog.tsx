@@ -6,22 +6,46 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { FormField, validateForm } from "@/components/store/form-field"
+import { api, messageOf } from "@/lib/api"
+import { useStore } from "@/lib/store"
 
 /** Back-in-stock alert (PDP-10). Controlled: open it by passing the sold-out size. */
-export function NotifyMeDialog({ productName, size, onClose }: { productName: string; size: string | null; onClose: () => void }) {
+export function NotifyMeDialog({
+  slug,
+  productName,
+  color,
+  size,
+  onClose,
+}: {
+  slug: string
+  productName: string
+  color: string
+  size: string | null
+  onClose: () => void
+}) {
+  const { user } = useStore()
   const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
   // Keep showing the last size while the popup animates closed
   const [shown, setShown] = useState(size)
   if (size && size !== shown) setShown(size)
 
-  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const errs = validateForm(e.currentTarget)
     setError(errs.email)
     if (errs.email) return
-    // ponytail: POST /stock-alerts once the API exists
-    onClose()
-    toast("We'll let you know", { description: `Email alert set for ${productName} in ${shown}.` })
+    const email = String(new FormData(e.currentTarget).get("email"))
+    setBusy(true)
+    try {
+      await api("/stock-alerts", { method: "POST", body: { slug, color, size: shown, email } })
+      onClose()
+      toast("We'll let you know", { description: `Email alert set for ${productName} in ${color}, ${shown}.` })
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -35,9 +59,9 @@ export function NotifyMeDialog({ productName, size, onClose }: { productName: st
           <DialogDescription>Leave your email and we&apos;ll tell you as soon as it&apos;s back.</DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={submit} className="space-y-4">
-          <FormField name="email" type="email" label="Email" required data-label="email" autoComplete="email" error={error} />
-          <Button type="submit" className="h-12 w-full font-heading text-base font-semibold">
-            Notify me
+          <FormField name="email" type="email" label="Email" required data-label="email" autoComplete="email" defaultValue={user?.email} error={error} />
+          <Button type="submit" disabled={busy} className="h-12 w-full font-heading text-base font-semibold">
+            {busy ? "Saving..." : "Notify me"}
           </Button>
         </form>
       </DialogContent>

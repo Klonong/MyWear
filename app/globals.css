@@ -41,7 +41,7 @@
 }
 
 :root {
-  /* FIELDWEAR tokens (design.md §2.1) mapped onto shadcn slots */
+  /* MyWear tokens (design.md §2.1) mapped onto shadcn slots */
   --ink: #111111;
   --paper: #ffffff;
   --studio: #e9e7e3;
@@ -99,5 +99,16 @@
   *, *::before, *::after {
     animation-duration: 80ms !important;
     transition-duration: 80ms !important;
+  }
+}
+
+/* Idle drift for the floating hero garments (only applied under motion-safe) */
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3%);
   }
 }

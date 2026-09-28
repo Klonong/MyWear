@@ -2,6 +2,7 @@ import Link from "next/link"
 import { buttonVariants } from "@/components/ui/button"
 import { SuccessMark } from "@/components/store/success-mark"
 import { cn } from "@/lib/utils"
+import { OrderRecap } from "./order-recap"
 
 export default async function Page({ params }: PageProps<"/order/[id]/confirmation">) {
   const { id } = await params
@@ -13,6 +14,7 @@ export default async function Page({ params }: PageProps<"/order/[id]/confirmati
         Order <span className="tabular font-semibold text-foreground">{id}</span> is on its way to the warehouse. We&apos;ve emailed your receipt. Expect
         delivery in 2 to 4 working days.
       </p>
+      <OrderRecap number={id} />
       <div className="mt-10 grid grid-cols-2 gap-3">
         <Link href="#" className={cn(buttonVariants(), "h-13 font-heading text-base font-semibold")}>
           Track order

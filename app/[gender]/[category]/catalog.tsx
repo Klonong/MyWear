@@ -1,9 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Check, ChevronDown, SearchX, SlidersHorizontal, X } from "lucide-react"
+import { toast } from "sonner"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import {
   Breadcrumb,
@@ -20,17 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { EmptyState } from "@/components/store/empty-state"
 import { ProductCard } from "@/components/store/product-card"
-import { CATEGORIES, PRODUCTS, type Gender, type Product } from "@/lib/data"
+import { getProducts, messageOf, type ProductList } from "@/lib/api"
+import { CATEGORIES, type Gender } from "@/lib/data"
 import { cn } from "@/lib/utils"
+import { cap, initialFilters, PRICE_BANDS, toQuery, type Filters } from "./query"
 
-type Filters = Record<string, string[]>
-type Facet = { key: string; label: string; values: string[]; match: (p: Product, v: string) => boolean }
-
-const PRICE_BANDS: Record<string, (n: number) => boolean> = {
-  "Under IDR 300,000": (n) => n < 300000,
-  "IDR 300,000 to 600,000": (n) => n >= 300000 && n <= 600000,
-  "Over IDR 600,000": (n) => n > 600000,
-}
+type Facet = { key: string; label: string; values: string[]; hexOf?: (colour: string) => string | undefined }
 
 const COLOURS: Record<string, string> = {
   Black: "#111111",
@@ -41,13 +37,13 @@ const COLOURS: Record<string, string> = {
 }
 
 const FACETS: Facet[] = [
-  { key: "category", label: "Category", values: CATEGORIES, match: (p, v) => p.category === v },
-  { key: "size", label: "Size", values: ["A/XS", "A/S", "A/M", "A/L", "A/XL"], match: (p, v) => p.sizes.some((s) => s.label === v && s.stock > 0) },
-  { key: "colour", label: "Colour", values: Object.keys(COLOURS), match: (p, v) => p.colors.some((c) => c.name === v) },
-  { key: "price", label: "Price", values: Object.keys(PRICE_BANDS), match: (p, v) => PRICE_BANDS[v](p.salePrice ?? p.price) },
-  { key: "badge", label: "Offers", values: ["New", "Sale", "Limited"], match: (p, v) => p.badge === v },
-  { key: "fit", label: "Fit", values: ["Regular", "Relaxed", "Slim", "Tapered"], match: (p, v) => p.fit.startsWith(v) },
-  { key: "sport", label: "Sport", values: ["Running", "Training", "Lifestyle"], match: (p, v) => p.sport === v },
+  { key: "category", label: "Category", values: CATEGORIES },
+  { key: "size", label: "Size", values: ["A/XS", "A/S", "A/M", "A/L", "A/XL"] },
+  { key: "colour", label: "Colour", values: Object.keys(COLOURS) },
+  { key: "price", label: "Price", values: Object.keys(PRICE_BANDS) },
+  { key: "badge", label: "Offers", values: ["New", "Sale", "Limited"] },
+  { key: "fit", label: "Fit", values: ["Regular", "Relaxed", "Slim", "Tapered"] },
+  { key: "sport", label: "Sport", values: ["Running", "Training", "Lifestyle"] },
 ]
 
 const SUBTYPES = ["Tee", "Long Sleeve", "Tank", "Half-Zip", "Jacket", "Jogger"]
@@ -60,10 +56,8 @@ const SORTS = {
   rating: "Top rated",
 }
 
-const PAGE = 24
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
-type FacetProps = { facet: Facet; selected: string[]; toggle: (k: string, v: string) => void; count: (k: string, v: string) => number }
+/** Count per option from the API's facets; undefined where the API doesn't count (price) */
+type FacetProps = { facet: Facet; selected: string[]; toggle: (k: string, v: string) => void; count: (k: string, v: string) => number | undefined }
 
 /** The options for one facet: size chips, colour swatches, or checkbox rows. Shared by the dropdowns and the All filters drawer. */
 function FacetOptions({ facet, selected, toggle, count }: FacetProps) {
@@ -101,7 +95,7 @@ function FacetOptions({ facet, selected, toggle, count }: FacetProps) {
               key={v}
               type="button"
               aria-pressed={on}
-              aria-label={`${v}, ${n} items`}
+              aria-label={n === undefined ? v : `${v}, ${n} items`}
               onClick={() => toggle(facet.key, v)}
               className={cn("flex flex-col items-center gap-1.5 text-xs", n === 0 && !on && "opacity-40")}
             >
@@ -110,7 +104,7 @@ function FacetOptions({ facet, selected, toggle, count }: FacetProps) {
                   "grid size-10 place-items-center rounded-full ring-1 ring-line ring-offset-2 transition-shadow",
                   on && "ring-2 ring-foreground",
                 )}
-                style={{ background: COLOURS[v] }}
+                style={{ background: facet.hexOf?.(v) ?? COLOURS[v] ?? "var(--line)" }}
               >
                 {on && <Check className={cn("size-4", v === "Off White" ? "text-foreground" : "text-background")} />}
               </span>
@@ -130,7 +124,7 @@ function FacetOptions({ facet, selected, toggle, count }: FacetProps) {
             <label className={cn("flex min-h-10 cursor-pointer items-center gap-3 text-sm", n === 0 && "text-muted-foreground")}>
               <Checkbox checked={selected.includes(v)} onCheckedChange={() => toggle(facet.key, v)} className="size-5" />
               <span className="flex-1">{v}</span>
-              <span className="tabular text-xs text-muted-foreground">{n}</span>
+              {n !== undefined && <span className="tabular text-xs text-muted-foreground">{n}</span>}
             </label>
           </li>
         )
@@ -186,52 +180,66 @@ function FacetDropdown({
   )
 }
 
-export function Catalog({ gender, category, initial }: { gender: Gender; category: string; initial: Filters }) {
-  const [filters, setFilters] = useState<Filters>(() => {
-    const f: Filters = {}
-    for (const facet of FACETS) if (initial[facet.key]) f[facet.key] = initial[facet.key]
-    if (category !== "all" && !f.category) f.category = [cap(category)]
-    return f
-  })
+export function Catalog({ gender, category, initial, initialData }: { gender: Gender; category: string; initial: Filters; initialData: ProductList }) {
+  const [filters, setFilters] = useState<Filters>(() => initialFilters(category, initial))
   const [sort, setSort] = useState<keyof typeof SORTS>((initial.sort?.[0] as keyof typeof SORTS) ?? "recommended")
-  const [subtype, setSubtype] = useState<string | null>(null)
-  const [shown, setShown] = useState(PAGE)
+  const [subtype, setSubtype] = useState<string | null>(initial.q?.[0] ?? null)
+  const [data, setData] = useState(initialData)
+  const [items, setItems] = useState(initialData.items)
+  const [loading, setLoading] = useState(false)
   const [openFacet, setOpenFacet] = useState<string | null>(null)
+  const latest = useRef(0)
 
-  // Keep filters shareable and back-button safe (PLP-4)
-  useEffect(() => {
-    const q = new URLSearchParams()
-    for (const [k, v] of Object.entries(filters)) if (v.length) q.set(k, v.join(","))
-    if (sort !== "recommended") q.set("sort", sort)
-    const s = q.toString()
-    window.history.replaceState(null, "", s ? `?${s}` : window.location.pathname)
-  }, [filters, sort])
-
-  const base = PRODUCTS.filter((p) => p.gender === gender && (!subtype || p.name.toLowerCase().includes(subtype.toLowerCase())))
-  const apply = (f: Filters) => base.filter((p) => FACETS.every((facet) => !f[facet.key]?.length || f[facet.key].some((v) => facet.match(p, v))))
-
-  const results = useMemo(() => {
-    const list = apply(filters)
-    const price = (p: Product) => p.salePrice ?? p.price
-    if (sort === "price-asc") list.sort((a, b) => price(a) - price(b))
-    if (sort === "price-desc") list.sort((a, b) => price(b) - price(a))
-    if (sort === "rating") list.sort((a, b) => b.rating - a.rating)
-    if (sort === "newest") list.sort((a, b) => Number(b.badge === "New") - Number(a.badge === "New"))
-    return list
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, sort, gender, subtype])
-
-  const toggle = (k: string, v: string) =>
-    setFilters((f) => {
-      const cur = f[k] ?? []
-      return { ...f, [k]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] }
-    })
-  const clearFacet = (k: string) => setFilters((f) => ({ ...f, [k]: [] }))
-  const clearAll = () => {
-    setFilters({})
-    setSubtype(null)
+  /** Fetch from the API. Only the newest request may update the grid, so fast clicking never shows stale results. */
+  const load = (f: Filters, s: string, q: string | null, page = 1) => {
+    const id = ++latest.current
+    setLoading(true)
+    getProducts(toQuery(gender, f, s, q, page))
+      .then((next) => {
+        if (id !== latest.current) return
+        setData(next)
+        setItems((prev) => (page === 1 ? next.items : [...prev, ...next.items]))
+      })
+      .catch((e) => id === latest.current && toast.error(messageOf(e)))
+      .finally(() => id === latest.current && setLoading(false))
   }
-  const count = (k: string, v: string) => apply({ ...filters, [k]: [v] }).length
+
+  /** Apply a change: update state, keep the URL shareable and back-button safe (PLP-4), refetch */
+  const update = (next: { filters?: Filters; sort?: keyof typeof SORTS; subtype?: string | null }) => {
+    const f = next.filters ?? filters
+    const s = next.sort ?? sort
+    const q = next.subtype !== undefined ? next.subtype : subtype
+    setFilters(f)
+    setSort(s)
+    setSubtype(q)
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(f)) if (v.length) params.set(k, v.join(","))
+    if (s !== "recommended") params.set("sort", s)
+    if (q) params.set("q", q)
+    const qs = params.toString()
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname)
+    load(f, s, q)
+  }
+
+  const toggle = (k: string, v: string) => {
+    const cur = filters[k] ?? []
+    const on = cur.includes(v)
+    // price is one range at a time; everything else is multi-select
+    const nextValues = k === "price" ? (on ? [] : [v]) : on ? cur.filter((x) => x !== v) : [...cur, v]
+    update({ filters: { ...filters, [k]: nextValues } })
+  }
+  const clearFacet = (k: string) => update({ filters: { ...filters, [k]: [] } })
+  const clearAll = () => update({ filters: {}, subtype: null })
+  const setSubtypeTo = (t: string | null) => update({ subtype: t })
+  const count = (k: string, v: string) => (k === "price" ? undefined : (data.facets[k]?.find((f) => f.value === v)?.count ?? 0))
+
+  // Options: the known list plus anything new the API reports (e.g. a colour added in admin)
+  const hexes = new Map(items.flatMap((p) => p.colors.map((c) => [c.name, c.hex] as const)))
+  const facets = FACETS.map((f) => ({
+    ...f,
+    values: [...f.values, ...(data.facets[f.key] ?? []).map((x) => x.value).filter((v) => !f.values.includes(v))],
+    ...(f.key === "colour" && { hexOf: (c: string) => COLOURS[c] ?? hexes.get(c) }),
+  }))
   const applied = Object.entries(filters).flatMap(([k, vs]) => vs.map((v) => ({ k, v })))
   const title = category === "all" ? `${cap(gender)}'s clothing` : `${cap(gender)}'s ${category}`
 
@@ -264,7 +272,7 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
               key={t}
               type="button"
               aria-pressed={on}
-              onClick={() => setSubtype(on ? null : t)}
+              onClick={() => setSubtypeTo(on ? null : t)}
               className={cn(
                 "h-10 shrink-0 px-5 text-sm font-medium transition-colors duration-[120ms] active:scale-[0.98]",
                 on ? "bg-foreground text-background" : "bg-mist hover:bg-line/70",
@@ -290,8 +298,8 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
               <SheetContent side="right" className="w-full gap-0 p-0 shadow-[0_0_24px_rgba(17,17,17,.12)] sm:max-w-md">
                 <SheetTitle className="border-b px-5 py-4 font-heading text-2xl font-bold">All filters</SheetTitle>
                 <div className="flex-1 overflow-y-auto px-5">
-                  <Accordion multiple defaultValue={FACETS.map((f) => f.key)}>
-                    {FACETS.map((f) => (
+                  <Accordion multiple defaultValue={facets.map((f) => f.key)}>
+                    {facets.map((f) => (
                       <AccordionItem key={f.key} value={f.key} className="border-b">
                         <AccordionTrigger className="py-4 text-[15px] font-semibold hover:no-underline">
                           {f.label}
@@ -308,14 +316,14 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
                   <Button variant="outline" className="h-13 flex-1 border-foreground" onClick={clearAll}>
                     Clear all
                   </Button>
-                  <SheetClose render={<Button className="h-13 flex-[2] font-heading text-base font-semibold" />}>Show {results.length} results</SheetClose>
+                  <SheetClose render={<Button className="h-13 flex-[2] font-heading text-base font-semibold" />}>Show {data.total} results</SheetClose>
                 </SheetFooter>
               </SheetContent>
             </Sheet>
 
             <span aria-hidden className="mx-1 h-6 w-px shrink-0 bg-line" />
 
-            {FACETS.map((f) => (
+            {facets.map((f) => (
               <FacetDropdown
                 key={f.key}
                 facet={f}
@@ -323,7 +331,7 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
                 toggle={toggle}
                 count={count}
                 clear={() => clearFacet(f.key)}
-                total={results.length}
+                total={data.total}
                 open={openFacet === f.key}
                 onOpenChange={(o) => setOpenFacet(o ? f.key : null)}
               />
@@ -332,9 +340,9 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
 
           <div className="hidden shrink-0 items-center gap-4 md:flex">
             <p className="tabular text-sm text-muted-foreground" aria-live="polite">
-              {results.length} items
+              {data.total} items
             </p>
-            <Select items={SORTS} value={sort} onValueChange={(v) => v && setSort(v as keyof typeof SORTS)}>
+            <Select items={SORTS} value={sort} onValueChange={(v) => v && update({ sort: v as keyof typeof SORTS })}>
               <SelectTrigger aria-label="Sort" className="h-10 min-w-52 px-3">
                 <span className="text-muted-foreground">Sort by:</span>
                 <SelectValue />
@@ -353,9 +361,9 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
         {/* Mobile: count + sort on their own row */}
         <div className="flex items-center justify-between gap-3 border-t py-2 md:hidden">
           <p className="tabular text-sm text-muted-foreground" aria-live="polite">
-            {results.length} items
+            {data.total} items
           </p>
-          <Select items={SORTS} value={sort} onValueChange={(v) => v && setSort(v as keyof typeof SORTS)}>
+          <Select items={SORTS} value={sort} onValueChange={(v) => v && update({ sort: v as keyof typeof SORTS })}>
             <SelectTrigger aria-label="Sort" className="h-9 border-0 px-0 font-medium">
               <SelectValue />
             </SelectTrigger>
@@ -384,7 +392,7 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    onClick={() => (k === "subtype" ? setSubtype(null) : toggle(k, v))}
+                    onClick={() => (k === "subtype" ? setSubtypeTo(null) : toggle(k, v))}
                     aria-label={`Remove filter ${v}`}
                     className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors hover:border-foreground"
                   >
@@ -402,16 +410,16 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
 
       {/* Full-width grid */}
       <div className="mt-8">
-        {results.length === 0 ? (
+        {data.total === 0 ? (
           <EmptyState icon={<SearchX />} title="No items match" body="Remove a filter or try another size.">
             <Button variant="outline" className="h-12 w-full border-foreground" onClick={clearAll}>
               Clear all filters
             </Button>
           </EmptyState>
         ) : (
-          <motion.div layout className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-3 md:gap-x-6 lg:grid-cols-4">
+          <motion.div layout aria-busy={loading} className={cn("grid grid-cols-2 gap-x-3 gap-y-10 transition-opacity duration-200 md:grid-cols-3 md:gap-x-6 lg:grid-cols-4", loading && "opacity-50")}>
             <AnimatePresence mode="popLayout" initial={false}>
-              {results.slice(0, shown).map((p) => (
+              {items.map((p) => (
                 <motion.div
                   layout
                   key={p.slug}
@@ -427,14 +435,14 @@ export function Catalog({ gender, category, initial }: { gender: Gender; categor
           </motion.div>
         )}
 
-        {results.length > 0 && (
+        {data.total > 0 && (
           <div className="mt-16 flex flex-col items-center gap-4">
             <p className="tabular text-sm text-muted-foreground">
-              Showing {Math.min(shown, results.length)} of {results.length}
+              Showing {items.length} of {data.total}
             </p>
-            {shown < results.length && (
-              <Button variant="outline" className="h-13 w-60 border-foreground font-heading text-base font-semibold" onClick={() => setShown(shown + PAGE)}>
-                Load more
+            {items.length < data.total && (
+              <Button variant="outline" className="h-13 w-60 border-foreground font-heading text-base font-semibold" disabled={loading} onClick={() => load(filters, sort, subtype, data.page + 1)}>
+                {loading ? "Loading..." : "Load more"}
               </Button>
             )}
           </div>

@@ -19,17 +19,15 @@ import { ImageZoomDialog } from "@/components/store/image-zoom-dialog"
 import { Price } from "@/components/store/price"
 import { ProductImage } from "@/components/store/product-image"
 import { PurchasePanel } from "@/components/store/purchase-panel"
+import type { ReviewList } from "@/lib/api"
 import { formatIDR, FREE_DELIVERY, type Color, type Product } from "@/lib/data"
 import { cn } from "@/lib/utils"
 
 const VIEWS = ["front", "back", "detail", "side", "lifestyle"]
 
-const REVIEWS = [
-  { name: "Putri A.", fit: "True to size", rating: 5, body: "Light, doesn't cling when you sweat. Took my usual M and it fits perfectly." },
-  { name: "Dimas R.", fit: "Runs slightly small", rating: 4, body: "Great fabric for morning runs. Size up if you like a looser fit." },
-]
+const FIT_LABEL: Record<string, string> = { runs_small: "Runs small", true_to_size: "True to size", runs_large: "Runs large" }
 
-export function ProductDetail({ product, initialColor }: { product: Product; initialColor?: string }) {
+export function ProductDetail({ product, reviews, initialColor }: { product: Product; reviews: ReviewList | null; initialColor?: string }) {
   const [color, setColor] = useState<Color>(product.colors.find((c) => c.name === initialColor) ?? product.colors[0])
   const [zoom, setZoom] = useState<number | null>(null)
   const [slide, setSlide] = useState(0)
@@ -181,19 +179,32 @@ export function ProductDetail({ product, initialColor }: { product: Product; ini
                 </span>
               </AccordionTrigger>
               <AccordionContent className="space-y-5 pb-5 text-[15px]">
-                {REVIEWS.map((r) => (
-                  <figure key={r.name} className="space-y-1.5">
-                    <div className="flex gap-0.5" aria-label={`${r.rating} out of 5 stars`}>
-                      {Array.from({ length: 5 }, (_, i) => (
-                        <Star key={i} className={cn("size-3.5", i < r.rating ? "fill-current" : "text-line")} />
-                      ))}
-                    </div>
-                    <blockquote>&ldquo;{r.body}&rdquo;</blockquote>
-                    <figcaption className="text-xs text-muted-foreground">
-                      {r.name}, verified buyer. Fit: {r.fit}
-                    </figcaption>
-                  </figure>
-                ))}
+                {reviews && Object.keys(reviews.summary.fit).length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Fit:{" "}
+                    {Object.entries(reviews.summary.fit)
+                      .map(([fit, n]) => `${FIT_LABEL[fit] ?? fit} (${n})`)
+                      .join(", ")}
+                  </p>
+                )}
+                {!reviews?.items.length ? (
+                  <p className="text-muted-foreground">No written reviews yet. Customers who buy this item can review it from their order.</p>
+                ) : (
+                  reviews.items.map((r) => (
+                    <figure key={r.id} className="space-y-1.5">
+                      <div className="flex gap-0.5" aria-label={`${r.rating} out of 5 stars`}>
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <Star key={i} className={cn("size-3.5", i < r.rating ? "fill-current" : "text-line")} />
+                        ))}
+                      </div>
+                      <p className="font-semibold">{r.title}</p>
+                      <blockquote>&ldquo;{r.body}&rdquo;</blockquote>
+                      <figcaption className="text-xs text-muted-foreground">
+                        {r.author}, verified buyer. Fit: {FIT_LABEL[r.fit] ?? r.fit}
+                      </figcaption>
+                    </figure>
+                  ))
+                )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>

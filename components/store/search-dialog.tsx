@@ -8,27 +8,33 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/store/empty-state"
 import { Price } from "@/components/store/price"
 import { ProductImage } from "@/components/store/product-image"
+import { api, messageOf } from "@/lib/api"
+import { POPULAR_SEARCHES, type Gender, type Product } from "@/lib/data"
 import { useStore } from "@/lib/store"
-import { CATEGORIES, POPULAR_SEARCHES, PRODUCTS } from "@/lib/data"
 
-const SYNONYMS: Record<string, string> = { tee: "t-shirt tee", hoody: "hoodie", pants: "jogger pants" }
-
-// ponytail: client-side substring match over mock data; swap for GET /search/suggest (SRCH-2)
-const search = (q: string) => {
-  const terms = q.toLowerCase().split(/\s+/).map((t) => SYNONYMS[t] ?? t)
-  return PRODUCTS.filter((p) => {
-    const hay = `${p.name} ${p.category} ${p.sport} ${p.gender}`.toLowerCase()
-    return terms.every((t) => t.split(" ").some((w) => hay.includes(w)))
-  })
-}
+type Suggestions = { categories: { gender: Gender; name: string; slug: string }[]; products: Product[]; total: number }
 
 export function SearchDialog() {
   const { overlay, open } = useStore()
   const [q, setQ] = useState("")
   const deferred = useDeferredValue(q.trim())
-  const results = deferred.length >= 2 ? search(deferred) : []
-  const categories = deferred.length >= 2 ? CATEGORIES.filter((c) => c.toLowerCase().includes(deferred.toLowerCase())) : []
+  const [found, setFound] = useState<{ q: string; data?: Suggestions; error?: string } | null>(null)
   const close = () => open(null)
+
+  // Live suggestions after 2 characters, debounced 200ms (SRCH-2)
+  useEffect(() => {
+    if (deferred.length < 2) return
+    const timer = setTimeout(() => {
+      api<Suggestions>(`/search/suggest?q=${encodeURIComponent(deferred)}`)
+        .then((data) => setFound({ q: deferred, data }))
+        .catch((e) => setFound({ q: deferred, error: messageOf(e) }))
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [deferred])
+
+  const current = found?.q === deferred ? found : null
+  const results = current?.data?.products ?? []
+  const categories = current?.data?.categories ?? []
 
   // "/" opens search from anywhere
   useEffect(() => {
@@ -80,6 +86,17 @@ export function SearchDialog() {
                 ))}
               </div>
             </div>
+          ) : !current ? (
+            <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-busy="true" aria-label="Searching">
+              {Array.from({ length: 4 }, (_, i) => (
+                <li key={i} className="space-y-2">
+                  <div className="aspect-[4/5] animate-pulse bg-studio" />
+                  <div className="h-4 w-4/5 animate-pulse bg-mist" />
+                </li>
+              ))}
+            </ul>
+          ) : current.error ? (
+            <EmptyState icon={<SearchX />} title="Search isn't available" body={current.error} className="py-8" />
           ) : results.length === 0 && categories.length === 0 ? (
             <EmptyState icon={<SearchX />} title={`No results for "${deferred}"`} body="Check the spelling or try a broader word like tee, parka or jogger." className="py-8" />
           ) : (
@@ -87,14 +104,14 @@ export function SearchDialog() {
               {categories.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {categories.map((c) => (
-                    <Link key={c} href={`/women/${c.toLowerCase()}`} onClick={close} className="flex h-9 items-center gap-1 bg-mist px-4 text-sm hover:bg-line">
-                      {c} <ArrowUpRight className="size-3.5" />
+                    <Link key={`${c.gender}-${c.slug}`} href={`/${c.gender}/${c.slug}`} onClick={close} className="flex h-9 items-center gap-1 bg-mist px-4 text-sm capitalize hover:bg-line">
+                      {c.gender}&apos;s {c.name.toLowerCase()} <ArrowUpRight className="size-3.5" />
                     </Link>
                   ))}
                 </div>
               )}
               <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {results.slice(0, 8).map((p, i) => (
+                {results.map((p, i) => (
                   <motion.li key={p.slug} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
                     <Link href={`/product/${p.slug}`} onClick={close} className="group block space-y-2">
                       <div className="overflow-hidden">

@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { validateForm } from "@/components/store/form-field"
 import { Logo } from "@/components/store/site-header"
+import { api, messageOf } from "@/lib/api"
 
 const COLUMNS = {
   Help: ["FAQ", "Delivery", "Returns", "Size guide"],
@@ -22,14 +23,20 @@ function Newsletter() {
     <form
       noValidate
       className="max-w-md"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault()
-        const errs = validateForm(e.currentTarget)
+        const form = e.currentTarget
+        const errs = validateForm(form)
         setError(errs.email)
         if (errs.email) return
-        e.currentTarget.reset()
-        // ponytail: POST to newsletter provider with double opt-in (CNT-3)
-        toast("Check your inbox", { description: "Confirm your email to start getting new drops." })
+        try {
+          // Double opt-in (CNT-3): the API emails a confirmation link
+          await api("/newsletter", { method: "POST", body: { email: String(new FormData(form).get("email")) } })
+          form.reset()
+          toast("Check your inbox", { description: "Confirm your email to start getting new drops." })
+        } catch (err) {
+          setError(messageOf(err))
+        }
       }}
     >
       <h2 className="font-heading text-[1.75rem] leading-tight font-bold">New drops, first.</h2>
@@ -110,7 +117,7 @@ export function SiteFooter() {
             ))}
           </p>
           <p className="flex gap-5">
-            <span>&copy; 2026 Fieldwear</span>
+            <span>&copy; 2026 MyWear</span>
             <Link href="#" className="hover:text-foreground">Privacy</Link>
             <Link href="#" className="hover:text-foreground">Terms</Link>
           </p>

@@ -3,8 +3,9 @@
 import { motion } from "motion/react"
 import { Heart } from "lucide-react"
 import { toast } from "sonner"
-import { useStore } from "@/lib/store"
+import { messageOf } from "@/lib/api"
 import type { Product } from "@/lib/data"
+import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 /** Heart toggle. Confirms with a toast that offers Undo, or View to open the wishlist drawer. */
@@ -16,13 +17,17 @@ export function WishlistButton({ product, className, iconClassName }: { product:
     e.preventDefault()
     e.stopPropagation()
     const on = !saved
+    // The heart flips immediately; if the save fails it flips back and says why
     setSaved(product.slug, on)
-    toast(on ? "Saved to wishlist" : "Removed from wishlist", {
-      description: product.name,
-      action: on
-        ? { label: "View", onClick: () => open("wishlist") }
-        : { label: "Undo", onClick: () => setSaved(product.slug, true) },
-    })
+      .then(() =>
+        toast(on ? "Saved to wishlist" : "Removed from wishlist", {
+          description: product.name,
+          action: on
+            ? { label: "View", onClick: () => open("wishlist") }
+            : { label: "Undo", onClick: () => void setSaved(product.slug, true).catch((err) => toast.error(messageOf(err))) },
+        }),
+      )
+      .catch((err) => toast.error(messageOf(err)))
   }
 
   return (

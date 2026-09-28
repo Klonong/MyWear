@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 
-const KEY = "fieldwear-consent"
+const KEY = "MyWear-consent"
 
 /** CNT-5 consent banner. Remembers the choice in localStorage. */
 export function CookieBanner() {

@@ -2,22 +2,23 @@
 
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Tag, X } from "lucide-react"
+import { AlertCircle, Tag, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { FormField } from "@/components/store/form-field"
-import { useStore } from "@/lib/store"
+import { messageOf } from "@/lib/api"
 import { formatIDR } from "@/lib/data"
-import { deliveryFee } from "@/lib/pricing"
+import { useStore } from "@/lib/store"
 
+/** Totals come from the API's quote; `express` swaps in the express fee the API priced. */
 export function OrderSummary({ children, express = false }: { children?: React.ReactNode; express?: boolean }) {
-  const { subtotal, discount, promo } = useStore()
-  const delivery = deliveryFee(subtotal, express)
+  const { cart } = useStore()
+  const delivery = express ? cart.deliveryOptions.express : cart.deliveryOptions.standard
   const rows: [string, string][] = [
-    ["Subtotal", formatIDR(subtotal)],
+    ["Subtotal", formatIDR(cart.subtotal)],
     ["Delivery", delivery ? formatIDR(delivery) : "Free"],
-    ...(discount ? [[`Discount (${promo})`, `-${formatIDR(discount)}`] as [string, string]] : []),
+    ...(cart.discount ? [[`Discount (${cart.promoCode})`, `-${formatIDR(cart.discount)}`] as [string, string]] : []),
   ]
   return (
     <div className="space-y-5 bg-mist p-5 md:p-7">
@@ -32,7 +33,7 @@ export function OrderSummary({ children, express = false }: { children?: React.R
         <Separator className="my-4 bg-line" />
         <div className="flex items-baseline justify-between">
           <dt className="font-semibold">Total</dt>
-          <dd className="font-heading text-2xl font-bold">{formatIDR(subtotal + delivery - discount)}</dd>
+          <dd className="font-heading text-2xl font-bold">{formatIDR(cart.subtotal - cart.discount + delivery)}</dd>
         </div>
       </dl>
       {children}
@@ -41,44 +42,62 @@ export function OrderSummary({ children, express = false }: { children?: React.R
 }
 
 export function PromoCodeForm() {
-  const { promo, applyPromo } = useStore()
+  const { cart, applyPromo, removePromo } = useStore()
   const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
 
-  if (promo)
+  if (cart.promoCode)
     return (
-      <div className="flex items-center justify-between bg-background px-3 py-2.5 text-sm">
-        <span className="flex items-center gap-2 font-medium">
-          <Tag className="size-4 text-success" /> {promo} applied
-        </span>
-        <button
-          type="button"
-          aria-label="Remove promo code"
-          onClick={() => {
-            applyPromo(null)
-            toast("Promo code removed")
-          }}
-          className="grid size-8 place-items-center hover:bg-mist"
-        >
-          <X className="size-4" />
-        </button>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between bg-background px-3 py-2.5 text-sm">
+          <span className="flex items-center gap-2 font-medium">
+            <Tag className="size-4 text-success" /> {cart.promoCode} applied
+          </span>
+          <button
+            type="button"
+            aria-label="Remove promo code"
+            onClick={() =>
+              removePromo()
+                .then(() => toast("Promo code removed"))
+                .catch((e) => toast.error(messageOf(e)))
+            }
+            className="grid size-8 place-items-center hover:bg-mist"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        {/* The code stopped applying (bag changed, code expired): say why, the API already dropped the discount */}
+        {cart.promoError && (
+          <p role="alert" className="flex items-center gap-1 text-xs text-signal">
+            <AlertCircle className="size-3.5 shrink-0" /> {cart.promoError}
+          </p>
+        )}
       </div>
     )
 
   return (
     <form
       noValidate
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault()
-        const code = String(new FormData(e.currentTarget).get("promo") ?? "")
-        const err = applyPromo(code) ?? undefined
-        setError(err)
-        if (!err) toast("Promo applied", { description: "10% off eligible items." })
+        const code = String(new FormData(e.currentTarget).get("promo") ?? "").trim()
+        if (!code) return setError("Enter a promo code.")
+        setBusy(true)
+        try {
+          await applyPromo(code)
+          setError(undefined)
+          toast("Promo applied")
+        } catch (err) {
+          setError(messageOf(err))
+        } finally {
+          setBusy(false)
+        }
       }}
       className="flex items-start gap-2"
     >
-      <FormField name="promo" label="Promo code" hint="Try FIELD10" error={error} className="flex-1" autoComplete="off" />
-      <Button type="submit" variant="outline" className="mt-[26px] h-12 border-foreground bg-background px-5">
-        Apply
+      <FormField name="promo" label="Promo code" hint="Try FIELD10 or FREESHIP" error={error} className="flex-1" autoComplete="off" />
+      <Button type="submit" variant="outline" disabled={busy} className="mt-[26px] h-12 border-foreground bg-background px-5">
+        {busy ? "Checking..." : "Apply"}
       </Button>
     </form>
   )

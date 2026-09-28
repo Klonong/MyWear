@@ -1,3 +1,26 @@
+# MyWear storefront
+
+Next.js 16 storefront. Products, bag, checkout, accounts, wishlist, search, reviews, stock alerts and the newsletter all come from the NestJS API in `../mywear-api`.
+
+## Run it
+
+```bash
+# 1. the API (see ../mywear-api/README.md): database, seed, server on :4000
+cd ../mywear-api && npm run db:up && npm run start:dev
+
+# 2. the storefront on :3000
+npm run dev
+```
+
+The browser calls `/api/*` on this origin and `next.config.ts` proxies it to the API, so the API's httpOnly cookies (guest bag, refresh token) are first-party. Server components call the API directly. Point both at another API with `API_URL` (default `http://localhost:4000`).
+
+- `lib/api.ts`: fetch helper, access token and silent refresh, catalogue reads (cached 60s)
+- `lib/store.tsx`: session, bag, wishlist and popups for client components
+
+In development, checkout completes the API's mock payment automatically; swap in the real gateway's redirect there when one is contracted.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

@@ -13,7 +13,7 @@ import { formatIDR } from "@/lib/data"
 import { cn } from "@/lib/utils"
 
 export function BagSheet() {
-  const { overlay, open, lines, count, subtotal } = useStore()
+  const { overlay, open, cart } = useStore()
   const close = () => open(null)
 
   return (
@@ -21,11 +21,11 @@ export function BagSheet() {
       <SheetContent className="w-full gap-0 p-0 shadow-[0_0_24px_rgba(17,17,17,.12)] sm:max-w-md">
         <SheetHeader className="border-b px-5 py-4">
           <SheetTitle className="font-heading text-2xl font-bold">
-            Your bag <span className="tabular text-muted-foreground">({count})</span>
+            Your bag <span className="tabular text-muted-foreground">({cart.count})</span>
           </SheetTitle>
         </SheetHeader>
 
-        {lines.length === 0 ? (
+        {cart.items.length === 0 ? (
           <EmptyState icon={<ShoppingBag />} title="Your bag is empty" body="Items you add will show up here.">
             <Link href="/women/all" onClick={close} className={cn(buttonVariants(), "h-12 flex-1 font-heading text-base font-semibold")}>
               Shop women
@@ -37,19 +37,19 @@ export function BagSheet() {
         ) : (
           <>
             <div className="border-b px-5 py-4">
-              <FreeDeliveryMeter subtotal={subtotal} />
+              <FreeDeliveryMeter subtotal={cart.subtotal} />
             </div>
             <ul className="flex-1 divide-y overflow-y-auto px-5">
               <AnimatePresence initial={false}>
-                {lines.map((l, i) => (
-                  <BagLine key={`${l.slug}-${l.color}-${l.size}`} line={l} index={i} compact />
+                {cart.items.map((l) => (
+                  <BagLine key={l.id} line={l} compact />
                 ))}
               </AnimatePresence>
             </ul>
             <SheetFooter className="gap-3 border-t px-5 py-5">
               <div className="flex items-baseline justify-between">
                 <span className="text-sm text-muted-foreground">Subtotal</span>
-                <span className="tabular font-heading text-xl font-bold">{formatIDR(subtotal)}</span>
+                <span className="tabular font-heading text-xl font-bold">{formatIDR(cart.subtotal)}</span>
               </div>
               <Link href="/checkout" onClick={close} className={cn(buttonVariants(), "h-13 font-heading text-lg font-semibold")}>
                 Checkout
