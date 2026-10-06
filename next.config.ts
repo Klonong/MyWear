@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "fastly.picsum.photos" },
+      // Product photos uploaded from /admin land in the Cloudflare R2 bucket's public URL
+      { protocol: "https", hostname: "*.r2.dev", pathname: "/products/**" },
     ],
   },
 };

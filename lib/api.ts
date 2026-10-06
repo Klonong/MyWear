@@ -49,16 +49,18 @@ export function refreshSession() {
 type Options = { method?: string; body?: unknown; revalidate?: number; retry?: boolean }
 
 export async function api<T>(path: string, { method = "GET", body, revalidate, retry = true }: Options = {}): Promise<T> {
+  // FormData (file uploads) sets its own multipart Content-Type
+  const json = body !== undefined && !(body instanceof FormData)
   let res: Response
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
       credentials: "include",
       headers: {
-        ...(body !== undefined && { "Content-Type": "application/json" }),
+        ...(json && { "Content-Type": "application/json" }),
         ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: json ? JSON.stringify(body) : (body as FormData | undefined),
       ...(revalidate !== undefined ? { next: { revalidate } } : { cache: "no-store" as const }),
     })
   } catch {

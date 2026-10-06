@@ -5,12 +5,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 import { motion, useMotionValueEvent, useScroll } from "motion/react"
-import { ArrowRight, ChevronRight, Heart, Lock, LogOut, Menu, Search, ShoppingBag, User } from "lucide-react"
+import { ArrowRight, ChevronRight, Heart, Lock, LogOut, Menu, PackagePlus, Search, ShoppingBag, User } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { IconButton } from "@/components/store/icon-button"
+import { CATALOG_ROLES } from "@/app/admin/admin-gate"
 import { CATEGORIES, GENDERS, NAV, photo, type Gender } from "@/lib/data"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -66,6 +67,11 @@ function AccountMenu() {
           <button type="button" onClick={() => open("wishlist")} className="flex h-10 w-full items-center gap-3 px-2 text-sm hover:bg-mist">
             <Heart className="size-4" strokeWidth={1.5} /> Wishlist
           </button>
+          {user && CATALOG_ROLES.includes(user.role) && (
+            <Link href="/admin/products/new" className="flex h-10 w-full items-center gap-3 px-2 text-sm hover:bg-mist">
+              <PackagePlus className="size-4" strokeWidth={1.5} /> Add product
+            </Link>
+          )}
           {user && (
             <button
               type="button"

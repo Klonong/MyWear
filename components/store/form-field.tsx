@@ -49,6 +49,7 @@ const MESSAGES: Record<string, string> = {
   phone: "Enter a phone number, e.g. 0812 3456 7890",
   postcode: "Enter a valid postcode, e.g. 12190",
   password: "Use at least 8 characters",
+  slug: "Use lowercase words joined by hyphens",
 }
 
 /** Reads native constraint validation into { name: message }. Inputs can set data-label for the "Enter your …" copy. */
