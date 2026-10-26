@@ -8,12 +8,14 @@ import { toast } from "sonner"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { FormField, validateForm } from "@/components/store/form-field"
 import { SuccessMark } from "@/components/store/success-mark"
-import { api, ApiError, messageOf } from "@/lib/api"
+import { api, messageOf } from "@/lib/api"
 import { GENDERS, type Gender } from "@/lib/data"
 import { cn } from "@/lib/utils"
 
-type Category = { id: string; gender: Gender; name: string; slug: string }
-type ColorDraft = { key: number; name: string; hex: string; images: string[]; uploading: number; stock: Record<string, string> }
+type Category = { id: string; gender: Gender; name: string; slug: string; parentId: string | null }
+/** A dropped photo: kept in the browser (preview is an object URL) until the form is saved */
+type Photo = { file: File; preview: string }
+type ColorDraft = { key: number; name: string; hex: string; images: Photo[]; stock: Record<string, string> }
 
 const MAX_BYTES = 5 * 1024 * 1024
 const ACCEPT = "image/jpeg,image/png,image/webp,image/avif"
@@ -23,14 +25,6 @@ const SIZES: Record<Gender, string[]> = {
   kids: ["110", "120", "130", "140", "150", "160", "One size"],
 }
 const SPORTS = ["Lifestyle", "Running", "Training"]
-
-const slugify = (s: string) =>
-  s
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
 
 /** The storefront draws its placeholder garment with a darker "tone" of the swatch */
 const darken = (hex: string) =>
@@ -45,7 +39,18 @@ const control =
   "w-full rounded-lg border border-input bg-background px-3 text-[15px] outline-none transition-colors hover:border-foreground/40 focus-visible:border-2 focus-visible:border-foreground aria-invalid:border-signal"
 
 let nextKey = 0
-const newColor = (): ColorDraft => ({ key: nextKey++, name: "", hex: "#1f1f1f", images: [], uploading: 0, stock: {} })
+const newColor = (): ColorDraft => ({ key: nextKey++, name: "", hex: "#1f1f1f", images: [], stock: {} })
+
+const uploadPhoto = (photo: Photo) => {
+  const body = new FormData()
+  body.append("file", photo.file)
+  return api<{ url: string }>("/admin/uploads", { method: "POST", body }).then(
+    ({ url }) => url,
+    (e: unknown) => {
+      throw new Error(`${photo.file.name}: ${messageOf(e)}`)
+    },
+  )
+}
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -111,13 +116,12 @@ export function ProductForm() {
 function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; status: string }) => void }) {
   const [categories, setCategories] = useState<Category[] | null>(null)
   const [name, setName] = useState("")
-  const [slug, setSlug] = useState("")
-  const [slugEdited, setSlugEdited] = useState(false)
   const [gender, setGender] = useState<Gender>("women")
   const [category, setCategory] = useState("")
+  const [subcategory, setSubcategory] = useState("")
   const [colors, setColors] = useState<ColorDraft[]>(() => [newColor()])
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<"" | "uploading" | "saving">("")
 
   useEffect(() => {
     api<Category[]>("/admin/categories").then(setCategories, (e: unknown) => {
@@ -126,30 +130,23 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
     })
   }, [])
 
-  const options = categories?.filter((c) => c.gender === gender) ?? []
+  // Uniqlo-style path: a top-level category, optionally narrowed to one of its subcategories
+  const options = categories?.filter((c) => c.gender === gender && !c.parentId) ?? []
   const categorySlug = options.some((c) => c.slug === category) ? category : (options[0]?.slug ?? "")
-  const uploading = colors.some((c) => c.uploading > 0)
+  const parentId = options.find((c) => c.slug === categorySlug)?.id
+  const subOptions = categories?.filter((c) => c.gender === gender && c.parentId && c.parentId === parentId) ?? []
+  const subcategorySlug = subOptions.some((c) => c.slug === subcategory) ? subcategory : ""
 
   const patch = (key: number, fn: (c: ColorDraft) => ColorDraft) => setColors((cs) => cs.map((c) => (c.key === key ? fn(c) : c)))
 
-  const upload = (key: number, files: FileList | File[]) => {
+  const addPhotos = (key: number, files: FileList | File[]) => {
+    const photos: Photo[] = []
     for (const file of Array.from(files)) {
-      if (!ACCEPT.split(",").includes(file.type)) {
-        toast.error(`${file.name}: use a JPEG, PNG, WebP or AVIF image.`)
-        continue
-      }
-      if (file.size > MAX_BYTES) {
-        toast.error(`${file.name} is over 5 MB. Export it smaller and try again.`)
-        continue
-      }
-      patch(key, (c) => ({ ...c, uploading: c.uploading + 1 }))
-      const body = new FormData()
-      body.append("file", file)
-      api<{ url: string }>("/admin/uploads", { method: "POST", body })
-        .then(({ url }) => patch(key, (c) => ({ ...c, images: [...c.images, url] })))
-        .catch((e: unknown) => toast.error(`${file.name}: ${messageOf(e)}`))
-        .finally(() => patch(key, (c) => ({ ...c, uploading: c.uploading - 1 })))
+      if (!ACCEPT.split(",").includes(file.type)) toast.error(`${file.name}: use a JPEG, PNG, WebP or AVIF image.`)
+      else if (file.size > MAX_BYTES) toast.error(`${file.name} is over 5 MB. Export it smaller and try again.`)
+      else photos.push({ file, preview: URL.createObjectURL(file) })
     }
+    if (photos.length) patch(key, (c) => ({ ...c, images: [...c.images, ...photos] }))
   }
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -172,28 +169,35 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
       return
     }
 
-    setBusy(true)
     const text = (k: string) => String(data.get(k) ?? "").trim()
     try {
+      // Photos go to R2 only now, on save. ponytail: if creating the product then fails, those files stay in the bucket unused
+      setBusy("uploading")
+      const urls = await Promise.all(colors.map((c) => Promise.all(c.images.map(uploadPhoto))))
+      setBusy("saving")
       const product = await api<{ slug: string; name: string; status: string }>("/admin/products", {
         method: "POST",
         body: {
-          slug,
           name: name.trim(),
           description: text("description"),
           gender,
-          categorySlug,
+          categorySlug: subcategorySlug || categorySlug,
           sport: text("sport"),
+          features: text("features")
+            .split("\n")
+            .map((f) => f.replace(/^[-•*]\s*/, "").trim())
+            .filter(Boolean),
           material: text("material"),
+          care: text("care") || undefined,
           fit: text("fit"),
           badge: text("badge") || undefined,
           notice: text("notice") || undefined,
           status: text("status"),
-          colors: colors.map((c) => ({
+          colors: colors.map((c, ci) => ({
             name: c.name.trim(),
             hex: c.hex,
             tone: darken(c.hex),
-            images: c.images.map((url, i) => ({ url, alt: `${name.trim()} in ${c.name.trim()}${i ? `, view ${i + 1}` : ""}` })),
+            images: urls[ci].map((url, i) => ({ url, alt: `${name.trim()} in ${c.name.trim()}${i ? `, view ${i + 1}` : ""}` })),
             skus: sizes.filter((s) => c.stock[s]).map((s) => ({ size: s, price, salePrice: sale, stock: Number(c.stock[s]) })),
           })),
         },
@@ -201,46 +205,27 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
       onCreated(product)
       window.scrollTo({ top: 0 })
     } catch (err) {
-      // A duplicate slug comes back as 409 from the API's unique-constraint filter
-      if (err instanceof ApiError && err.status === 409) setErrors({ slug: "Another product already uses this URL. Change it." })
-      toast.error(messageOf(err))
-      setBusy(false)
+      // ApiError and uploadPhoto's errors both carry a message written for the merchandiser
+      toast.error(err instanceof Error ? err.message : messageOf(err))
+      setBusy("")
     }
   }
 
   return (
     <form noValidate onSubmit={submit} className="mt-10 space-y-10">
       <Section title="Details">
-        <div className="grid gap-5 md:grid-cols-2">
-          <FormField
-            name="name"
-            label="Product name"
-            required
-            minLength={2}
-            maxLength={120}
-            data-label="product name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              if (!slugEdited) setSlug(slugify(e.target.value))
-            }}
-            error={errors.name}
-          />
-          <FormField
-            name="slug"
-            label="URL"
-            required
-            pattern="[a-z0-9]+(-[a-z0-9]+)*"
-            data-label="URL"
-            value={slug}
-            onChange={(e) => {
-              setSlugEdited(true)
-              setSlug(e.target.value)
-            }}
-            hint={slug ? `/product/${slug}` : "Filled in from the name"}
-            error={errors.slug}
-          />
-        </div>
+        <FormField
+          name="name"
+          label="Product name"
+          required
+          minLength={2}
+          maxLength={120}
+          data-label="product name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          hint="The product ID and page address are created when you save"
+          error={errors.name}
+        />
         <Labeled id="description" label="Description" required error={errors.description} hint="Shown under the price on the product page">
           <textarea
             id="description"
@@ -254,7 +239,10 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
             className={cn(control, "py-2.5")}
           />
         </Labeled>
-        <div className="grid gap-5 md:grid-cols-3">
+        <Labeled id="features" label="Overview" hint="One feature per line, e.g. “Soft, smooth Supima cotton”. Shown as bullet points.">
+          <textarea id="features" name="features" maxLength={2000} rows={4} className={cn(control, "py-2.5")} />
+        </Labeled>
+        <div className="grid gap-5 md:grid-cols-4">
           <Labeled id="gender" label="Gender" required>
             <select id="gender" value={gender} onChange={(e) => setGender(e.target.value as Gender)} className={cn(control, "h-12 capitalize")}>
               {GENDERS.map((g) => (
@@ -281,6 +269,22 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
               ))}
             </select>
           </Labeled>
+          <Labeled id="subcategory" label="Subcategory">
+            <select
+              id="subcategory"
+              value={subcategorySlug}
+              onChange={(e) => setSubcategory(e.target.value)}
+              disabled={!subOptions.length}
+              className={cn(control, "h-12")}
+            >
+              <option value="">{subOptions.length ? "None" : "—"}</option>
+              {subOptions.map((c) => (
+                <option key={c.id} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Labeled>
           <FormField name="sport" label="Sport" required minLength={2} maxLength={40} data-label="sport" list="sports" defaultValue="Lifestyle" error={errors.sport} />
           <datalist id="sports">
             {SPORTS.map((s) => (
@@ -292,6 +296,7 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
           <FormField name="material" label="Material" required minLength={2} maxLength={300} data-label="material" placeholder="100% cotton" error={errors.material} />
           <FormField name="fit" label="Fit" required minLength={2} maxLength={200} data-label="fit" placeholder="Relaxed fit, dropped shoulders" error={errors.fit} />
         </div>
+        <FormField name="care" label="Care" maxLength={300} placeholder="Machine wash cold, gentle cycle. Do not tumble dry." />
       </Section>
 
       <Section title="Price" hint="Applies to every size and colour. Adjust single SKUs later from inventory.">
@@ -319,7 +324,7 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
             sizes={SIZES[gender]}
             error={errors[`color-${c.key}`]}
             onChange={(fn) => patch(c.key, fn)}
-            onUpload={(files) => upload(c.key, files)}
+            onAddPhotos={(files) => addPhotos(c.key, files)}
             onRemove={colors.length > 1 ? () => setColors((cs) => cs.filter((x) => x.key !== c.key)) : undefined}
           />
         ))}
@@ -348,13 +353,11 @@ function Form({ onCreated }: { onCreated: (p: { slug: string; name: string; stat
           <Link href="/" className={cn(buttonVariants({ variant: "ghost" }), "h-13 px-4 text-[15px]")}>
             <ArrowLeft /> Back to store
           </Link>
-          <Button type="submit" disabled={busy || uploading} className="h-13 px-10 font-heading text-base font-semibold">
+          <Button type="submit" disabled={!!busy} className="h-13 px-10 font-heading text-base font-semibold">
             {busy ? (
               <>
-                <Loader2 className="animate-spin" /> Saving…
+                <Loader2 className="animate-spin" /> {busy === "uploading" ? "Uploading photos…" : "Saving…"}
               </>
-            ) : uploading ? (
-              "Waiting for photos…"
             ) : (
               "Save product"
             )}
@@ -371,7 +374,7 @@ function ColorCard({
   sizes,
   error,
   onChange,
-  onUpload,
+  onAddPhotos,
   onRemove,
 }: {
   color: ColorDraft
@@ -379,7 +382,7 @@ function ColorCard({
   sizes: string[]
   error?: string
   onChange: (fn: (c: ColorDraft) => ColorDraft) => void
-  onUpload: (files: FileList | File[]) => void
+  onAddPhotos: (files: FileList | File[]) => void
   onRemove?: () => void
 }) {
   const id = useId()
@@ -422,15 +425,15 @@ function ColorCard({
       <div>
         <p className="text-[13px] font-medium">Photos</p>
         <ul className="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-          {color.images.map((url, i) => (
-            <li key={url} className="group relative aspect-[4/5] overflow-hidden bg-studio">
-              <Image src={url} alt="" fill unoptimized className="object-cover" />
+          {color.images.map((photo, i) => (
+            <li key={photo.preview} className="group relative aspect-[4/5] overflow-hidden bg-studio">
+              <Image src={photo.preview} alt="" fill unoptimized className="object-cover" />
               {i === 0 ? (
                 <span className="absolute bottom-1.5 left-1.5 bg-foreground px-1.5 py-0.5 text-[11px] font-semibold text-background">Cover</span>
               ) : (
                 <button
                   type="button"
-                  onClick={() => onChange((c) => ({ ...c, images: [url, ...c.images.filter((u) => u !== url)] }))}
+                  onClick={() => onChange((c) => ({ ...c, images: [photo, ...c.images.filter((p) => p !== photo)] }))}
                   className="absolute bottom-1.5 left-1.5 bg-background/90 px-1.5 py-0.5 text-[11px] font-semibold opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 >
                   Make cover
@@ -439,16 +442,14 @@ function ColorCard({
               <button
                 type="button"
                 aria-label={`Remove photo ${i + 1}`}
-                onClick={() => onChange((c) => ({ ...c, images: c.images.filter((u) => u !== url) }))}
+                onClick={() => {
+                  URL.revokeObjectURL(photo.preview)
+                  onChange((c) => ({ ...c, images: c.images.filter((p) => p !== photo) }))
+                }}
                 className="absolute top-1.5 right-1.5 grid size-7 place-items-center bg-background/90 transition-transform active:scale-90"
               >
                 <X className="size-4" />
               </button>
-            </li>
-          ))}
-          {Array.from({ length: color.uploading }, (_, i) => (
-            <li key={`up-${i}`} className="grid aspect-[4/5] place-items-center bg-mist" aria-label="Uploading photo">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </li>
           ))}
           <li>
@@ -462,7 +463,7 @@ function ColorCard({
               onDrop={(e) => {
                 e.preventDefault()
                 setDragging(false)
-                onUpload(e.dataTransfer.files)
+                onAddPhotos(e.dataTransfer.files)
               }}
               className={cn(
                 "flex aspect-[4/5] cursor-pointer flex-col items-center justify-center gap-1.5 border border-dashed border-foreground/30 p-2 text-center text-xs text-muted-foreground transition-colors hover:border-foreground hover:text-foreground has-focus-visible:border-2 has-focus-visible:border-foreground",
@@ -478,14 +479,14 @@ function ColorCard({
                 multiple
                 className="sr-only"
                 onChange={(e) => {
-                  if (e.target.files) onUpload(e.target.files)
+                  if (e.target.files) onAddPhotos(e.target.files)
                   e.target.value = ""
                 }}
               />
             </label>
           </li>
         </ul>
-        <p className="mt-2 text-xs text-muted-foreground">JPEG, PNG, WebP or AVIF, up to 5 MB each. 4:5 portrait works best.</p>
+        <p className="mt-2 text-xs text-muted-foreground">JPEG, PNG, WebP or AVIF, up to 5 MB each. 4:5 portrait works best. Photos upload when you save.</p>
       </div>
 
       <div>

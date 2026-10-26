@@ -11,7 +11,7 @@ import { ProductRail } from "@/components/store/product-rail"
 import { Reveal } from "@/components/store/reveal"
 import { ScrollHero } from "@/components/store/scroll-hero"
 import { SectionHeader } from "@/components/store/section-header"
-import { CATEGORIES, EDITORIAL, GENDERS, photo, type Gender, type Product } from "@/lib/data"
+import { CATEGORIES, EDITORIAL, GENDERS, type Gender, type Product } from "@/lib/data"
 import { cn } from "@/lib/utils"
 
 function GenderTabs({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
@@ -56,16 +56,16 @@ function CategoryChips({ gender, products }: { gender: Gender; products: Product
   )
 }
 
-function Editorial({ gender }: { gender: Gender }) {
+function Editorial() {
   return (
     <section className="mx-auto grid max-w-[1440px] gap-4 px-4 md:grid-cols-12 md:gap-6 md:px-10">
       {EDITORIAL.map((tile, i) => (
         <Link
           key={tile.title}
-          href={`/${gender}/all`}
+          href={tile.href}
           className={cn("group relative block overflow-hidden bg-studio", i === 0 ? "aspect-[4/5] md:col-span-7 md:aspect-[7/6]" : "aspect-[4/5] md:col-span-5 md:aspect-auto")}
         >
-          <Image src={photo(tile.photo, 1200, 1200)} alt="" fill sizes="(min-width: 768px) 50vw, 100vw" className="object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(.16,1,.3,1)] group-hover:scale-105" />
+          <Image src={tile.image} alt="" fill sizes="(min-width: 768px) 50vw, 100vw" className="object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(.16,1,.3,1)] group-hover:scale-105" />
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-6 pt-24 text-white md:p-8">
             <h3 className="font-heading text-3xl font-bold md:text-4xl">{tile.title}</h3>
             <p className="mt-1 max-w-[40ch] text-sm text-white/85">{tile.sub}</p>
@@ -81,14 +81,16 @@ function Editorial({ gender }: { gender: Gender }) {
 
 function Offers({ gender, sale }: { gender: Gender; sale: Product[] }) {
   const list = [...sale.filter((p) => p.gender === gender), ...sale.filter((p) => p.gender !== gender)].slice(0, 3)
+  // Largest real markdown, rounded down so the banner never overstates it
+  const best = Math.max(0, ...sale.map((p) => (p.salePrice ? Math.floor((1 - p.salePrice / p.price) * 100) : 0)))
   return (
     <section className="mx-auto max-w-360 px-4 md:px-10">
       <div className="grid gap-6 md:grid-cols-4">
         <Link href={`/${gender}/all?badge=Sale`} className="group flex min-h-64 flex-col justify-between bg-foreground p-6 text-background md:p-8">
           <p className="text-sm text-background/70">Limited-time offers</p>
           <div>
-            <p className="font-heading text-5xl leading-none font-bold md:text-6xl">Up to 30% off</p>
-            <p className="mt-3 text-sm text-background/70">Selected running and training pieces, while stocks last.</p>
+            <p className="font-heading text-5xl leading-none font-bold md:text-6xl">{best ? `Up to ${best}% off` : "On sale now"}</p>
+            <p className="mt-3 text-sm text-background/70">Selected pieces, while stocks last.</p>
             <span className="mt-6 inline-flex items-center gap-1 text-sm font-semibold">
               Shop the sale <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </span>
@@ -139,7 +141,7 @@ export function HomeView({ byGender, sale }: { byGender: Record<Gender, Product[
         <ProductRail title="New arrivals" products={fresh} href={`/${gender}/all`} />
       </Reveal>
       <Reveal>
-        <Editorial gender={gender} />
+        <Editorial />
       </Reveal>
       <Reveal>
         <Offers gender={gender} sale={sale} />

@@ -9,7 +9,7 @@ export default function Page() {
       <p className="text-[13px] font-medium tracking-wide text-muted-foreground uppercase">Catalogue</p>
       <h1 className="mt-1 font-heading text-[2.5rem] leading-none font-bold">Add product</h1>
       <p className="mt-3 max-w-xl text-[15px] text-muted-foreground">
-        Photos upload to the image bucket as you add them. The product goes live when you publish.
+        Photos stay on your device until you save, then upload to the image bucket. The product goes live when you publish.
       </p>
       <ProductForm />
     </div>

@@ -34,7 +34,7 @@ export function ImageZoomDialog({
         className="h-[100dvh] max-w-none gap-0 bg-studio p-0 ring-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">
-          {name}, {views[i]} view
+          {name}, {views[i]}
         </DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
           <AnimatePresence mode="popLayout" initial={false}>
@@ -46,7 +46,7 @@ export function ImageZoomDialog({
               transition={{ duration: 0.25 }}
               className="h-full max-h-[calc(100dvh-7rem)] aspect-[4/5]"
             >
-              <ProductImage color={color} view={i} alt={`${color.name} ${name}, ${views[i]} view`} className="h-full" />
+              <ProductImage color={color} view={i} alt={`${color.name} ${name}, ${views[i]}`} className="h-full" sizes="(min-width: 768px) 80vh, 100vw" />
             </motion.div>
           </AnimatePresence>
           {([-1, 1] as const).map((d) => (
@@ -67,14 +67,14 @@ export function ImageZoomDialog({
         <div className="flex justify-center gap-2 bg-background p-3">
           {views.map((v, j) => (
             <button
-              key={v}
+              key={j}
               type="button"
               onClick={() => onIndex(j)}
-              aria-label={`Show ${v} view`}
+              aria-label={`Show ${v}`}
               aria-current={j === i}
               className={cn("w-12 border-b-2 pb-1 transition-opacity", j === i ? "border-foreground" : "border-transparent opacity-60 hover:opacity-100")}
             >
-              <ProductImage color={color} view={j} alt="" />
+              <ProductImage color={color} view={j} alt="" sizes="48px" />
             </button>
           ))}
         </div>

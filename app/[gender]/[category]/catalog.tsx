@@ -28,25 +28,17 @@ import { cap, initialFilters, PRICE_BANDS, toQuery, type Filters } from "./query
 
 type Facet = { key: string; label: string; values: string[]; hexOf?: (colour: string) => string | undefined }
 
-const COLOURS: Record<string, string> = {
-  Black: "#111111",
-  "Off White": "#f2efe8",
-  Navy: "#1f2a44",
-  Sage: "#8fa38a",
-  "Craft Khaki": "#8a7f63",
-}
-
 const FACETS: Facet[] = [
   { key: "category", label: "Category", values: CATEGORIES },
-  { key: "size", label: "Size", values: ["A/XS", "A/S", "A/M", "A/L", "A/XL"] },
-  { key: "colour", label: "Colour", values: Object.keys(COLOURS) },
+  // Sizes, colours, fits and sports come from the live catalogue (the API's facet values)
+  { key: "size", label: "Size", values: [] },
+  { key: "colour", label: "Colour", values: [] },
   { key: "price", label: "Price", values: Object.keys(PRICE_BANDS) },
   { key: "badge", label: "Offers", values: ["New", "Sale", "Limited"] },
-  { key: "fit", label: "Fit", values: ["Regular", "Relaxed", "Slim", "Tapered"] },
-  { key: "sport", label: "Sport", values: ["Running", "Training", "Lifestyle"] },
+  { key: "fit", label: "Fit", values: [] },
+  { key: "sport", label: "Sport", values: [] },
 ]
 
-const SUBTYPES = ["Tee", "Long Sleeve", "Tank", "Half-Zip", "Jacket", "Jogger"]
 
 const SORTS = {
   recommended: "Recommended",
@@ -104,7 +96,7 @@ function FacetOptions({ facet, selected, toggle, count }: FacetProps) {
                   "grid size-10 place-items-center rounded-full ring-1 ring-line ring-offset-2 transition-shadow",
                   on && "ring-2 ring-foreground",
                 )}
-                style={{ background: facet.hexOf?.(v) ?? COLOURS[v] ?? "var(--line)" }}
+                style={{ background: facet.hexOf?.(v) ?? "var(--line)" }}
               >
                 {on && <Check className={cn("size-4", v === "Off White" ? "text-foreground" : "text-background")} />}
               </span>
@@ -180,7 +172,19 @@ function FacetDropdown({
   )
 }
 
-export function Catalog({ gender, category, initial, initialData }: { gender: Gender; category: string; initial: Filters; initialData: ProductList }) {
+export function Catalog({
+  gender,
+  category,
+  initial,
+  initialData,
+  subcategories,
+}: {
+  gender: Gender
+  category: string
+  initial: Filters
+  initialData: ProductList
+  subcategories: string[]
+}) {
   const [filters, setFilters] = useState<Filters>(() => initialFilters(category, initial))
   const [sort, setSort] = useState<keyof typeof SORTS>((initial.sort?.[0] as keyof typeof SORTS) ?? "recommended")
   const [subtype, setSubtype] = useState<string | null>(initial.q?.[0] ?? null)
@@ -233,12 +237,12 @@ export function Catalog({ gender, category, initial, initialData }: { gender: Ge
   const setSubtypeTo = (t: string | null) => update({ subtype: t })
   const count = (k: string, v: string) => (k === "price" ? undefined : (data.facets[k]?.find((f) => f.value === v)?.count ?? 0))
 
-  // Options: the known list plus anything new the API reports (e.g. a colour added in admin)
+  // Options: the fixed list plus every value the API reports for this catalogue
   const hexes = new Map(items.flatMap((p) => p.colors.map((c) => [c.name, c.hex] as const)))
   const facets = FACETS.map((f) => ({
     ...f,
     values: [...f.values, ...(data.facets[f.key] ?? []).map((x) => x.value).filter((v) => !f.values.includes(v))],
-    ...(f.key === "colour" && { hexOf: (c: string) => COLOURS[c] ?? hexes.get(c) }),
+    ...(f.key === "colour" && { hexOf: (c: string) => hexes.get(c) }),
   }))
   const applied = Object.entries(filters).flatMap(([k, vs]) => vs.map((v) => ({ k, v })))
   const title = category === "all" ? `${cap(gender)}'s clothing` : `${cap(gender)}'s ${category}`
@@ -263,26 +267,28 @@ export function Catalog({ gender, category, initial, initialData }: { gender: Ge
 
       <h1 className="mt-3 font-heading text-[2.25rem] leading-none font-bold md:text-[3rem]">{title}</h1>
 
-      {/* Sub-category tiles, like Uniqlo's category shortcuts */}
-      <div className="-mx-4 mt-6 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0">
-        {SUBTYPES.map((t) => {
-          const on = subtype === t
-          return (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setSubtypeTo(on ? null : t)}
-              className={cn(
-                "h-10 shrink-0 px-5 text-sm font-medium transition-colors duration-[120ms] active:scale-[0.98]",
-                on ? "bg-foreground text-background" : "bg-mist hover:bg-line/70",
-              )}
-            >
-              {t}
-            </button>
-          )
-        })}
-      </div>
+      {/* Subcategory shortcuts, like Uniqlo's */}
+      {subcategories.length > 0 && (
+        <div className="-mx-4 mt-6 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0">
+          {subcategories.map((t) => {
+            const on = filters.subcategory?.[0] === t
+            return (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={on}
+                onClick={() => update({ filters: { ...filters, subcategory: on ? [] : [t] } })}
+                className={cn(
+                  "h-10 shrink-0 px-5 text-sm font-medium transition-colors duration-[120ms] active:scale-[0.98]",
+                  on ? "bg-foreground text-background" : "bg-mist hover:bg-line/70",
+                )}
+              >
+                {t}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Horizontal filter bar */}
       <div className="sticky top-0 z-30 -mx-4 mt-6 border-y bg-background/95 px-4 backdrop-blur-md md:-mx-10 md:px-10">

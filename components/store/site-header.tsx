@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { IconButton } from "@/components/store/icon-button"
 import { CATALOG_ROLES } from "@/app/admin/admin-gate"
-import { CATEGORIES, GENDERS, NAV, photo, type Gender } from "@/lib/data"
+import { CATEGORIES, EDITORIAL, GENDERS, NAV, type Gender } from "@/lib/data"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -107,10 +107,10 @@ function MegaMenu({ gender }: { gender: string }) {
             </ul>
           </div>
         ))}
-        <Link href={`/${gender}/all`} className="group/tile relative aspect-[4/3] overflow-hidden bg-studio">
-          <Image src={photo(786, 600, 450)} alt="Fall running edit" fill sizes="320px" className="object-cover transition-transform duration-700 group-hover/tile:scale-105" />
+        <Link href={EDITORIAL[0].href} className="group/tile relative aspect-[4/3] overflow-hidden bg-studio">
+          <Image src={EDITORIAL[0].image} alt="" fill sizes="320px" className="object-cover transition-transform duration-700 group-hover/tile:scale-105" />
           <span className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent p-4 font-heading text-xl font-bold text-white">
-            Fall running edit <ArrowRight className="size-5" />
+            {EDITORIAL[0].title} <ArrowRight className="size-5" />
           </span>
         </Link>
       </div>

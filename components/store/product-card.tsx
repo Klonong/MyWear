@@ -21,9 +21,9 @@ export function ProductCard({ product }: { product: Product }) {
             alt={`${product.name}, ${product.colors[0].name}`}
             className="transition-transform duration-500 ease-[cubic-bezier(.2,0,0,1)] group-hover:scale-[1.04]"
           />
-          {/* Second view fades in on hover (PLP-2) */}
+          {/* Second photo fades in on hover (PLP-2) */}
           <ProductImage
-            color={product.colors[1] ?? product.colors[0]}
+            color={product.colors[0]}
             view={1}
             alt=""
             className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"

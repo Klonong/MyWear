@@ -133,7 +133,7 @@ export function ScrollHero() {
   const origin = `${pct(FEET.x, W)} ${pct(FEET.y, H)}`
 
   return (
-    <section ref={section} aria-label="New season campaign" className={cn("relative", reduce ? "h-[100dvh]" : "h-[220dvh]")}>
+    <section ref={section} aria-label="New season campaign" className="relative h-[220dvh] motion-reduce:h-[100dvh]">
       <div
         className="sticky top-0 h-[100dvh] overflow-hidden bg-[#9dc3ee] [container-type:size]"
         onPointerMove={(e) => {

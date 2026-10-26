@@ -23,8 +23,6 @@ import type { ReviewList } from "@/lib/api"
 import { formatIDR, FREE_DELIVERY, type Color, type Product } from "@/lib/data"
 import { cn } from "@/lib/utils"
 
-const VIEWS = ["front", "back", "detail", "side", "lifestyle"]
-
 const FIT_LABEL: Record<string, string> = { runs_small: "Runs small", true_to_size: "True to size", runs_large: "Runs large" }
 
 export function ProductDetail({ product, reviews, initialColor }: { product: Product; reviews: ReviewList | null; initialColor?: string }) {
@@ -33,6 +31,8 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
   const [slide, setSlide] = useState(0)
   const [showBar, setShowBar] = useState(false)
   const addRef = useRef<HTMLButtonElement>(null)
+  // One slide per photo of the selected colour; a single drawn placeholder when it has none
+  const views = color.images?.length ? color.images.map((_, i) => `photo ${i + 1} of ${color.images!.length}`) : ["placeholder"]
 
   // PDP-14: sticky mobile bar once the main button scrolls away
   useEffect(() => {
@@ -64,7 +64,7 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
     <button
       type="button"
       onClick={() => setZoom(i)}
-      aria-label={`Zoom ${VIEWS[i]} view`}
+      aria-label={`Zoom ${views[i]}`}
       className={cn("group relative block w-full cursor-zoom-in overflow-hidden", className)}
     >
       <AnimatePresence mode="popLayout" initial={false}>
@@ -72,7 +72,8 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
           <ProductImage
             color={color}
             view={i}
-            alt={`${color.name} ${product.name}, ${VIEWS[i]} view`}
+            alt={color.images?.[i]?.alt ?? `${color.name} ${product.name}`}
+            sizes={i === 0 ? "(min-width: 768px) 58vw, 100vw" : "(min-width: 768px) 29vw, 100vw"}
             className="transition-transform duration-700 ease-[cubic-bezier(.2,0,0,1)] group-hover:scale-[1.03]"
           />
         </motion.div>
@@ -91,19 +92,19 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
           className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] md:hidden"
           onScroll={(e) => setSlide(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
         >
-          {VIEWS.map((v, i) => (
+          {views.map((v, i) => (
             <div key={v} className="w-full shrink-0 snap-center">
               {image(i)}
             </div>
           ))}
         </div>
         <div className="flex justify-center gap-1.5 py-3 md:hidden" aria-hidden>
-          {VIEWS.map((v, i) => (
+          {views.map((v, i) => (
             <span key={v} className={cn("h-1 rounded-full transition-all duration-300", i === slide ? "w-5 bg-foreground" : "w-1.5 bg-line")} />
           ))}
         </div>
         <div className="hidden gap-2 md:grid md:grid-cols-2">
-          {VIEWS.map((v, i) => (
+          {views.map((v, i) => (
             <div key={v} className={i === 0 ? "col-span-2" : undefined}>
               {image(i)}
             </div>
@@ -125,8 +126,16 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
                   </BreadcrumbItem>
                   <BreadcrumbSeparator>/</BreadcrumbSeparator>
                   <BreadcrumbItem>
-                    <BreadcrumbPage>{product.sport}</BreadcrumbPage>
+                    <BreadcrumbLink render={<Link href={`/${product.gender}/${product.categorySlug ?? "all"}`} />}>{product.category}</BreadcrumbLink>
                   </BreadcrumbItem>
+                  {product.subcategory && (
+                    <>
+                      <BreadcrumbSeparator>/</BreadcrumbSeparator>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage>{product.subcategory}</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  )}
                 </BreadcrumbList>
               </Breadcrumb>
               <button type="button" onClick={share} aria-label="Share" className="-mr-2 grid size-10 place-items-center hover:bg-mist">
@@ -157,13 +166,35 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
           </ul>
 
           <Accordion className="border-t">
-            {[
-              ["Description", product.blurb],
-              ["Details & materials", product.material],
-              ["Size & fit", product.fit],
+            {(
+              [
+                [
+                  "Overview",
+                  <>
+                    {product.features?.length ? (
+                      <ul className="list-disc space-y-1 pl-5">
+                        {product.features.map((f) => (
+                          <li key={f}>{f}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      product.blurb
+                    )}
+                    {product.code && <p className="mt-3 text-sm">Product ID: {product.code}</p>}
+                  </>,
+                ],
+                [
+                  "Materials & care",
+                  <>
+                    <p>{product.material}</p>
+                    {product.care && <p className="mt-2">{product.care}</p>}
+                  </>,
+                ],
+                ["Size & fit", product.fit],
               ["Delivery & returns", "Standard delivery in 2 to 4 working days. Free returns within 30 days, in store or by courier."],
-              ...(product.notice ? [["Vouchers & coupons", "This item can't be used with vouchers or coupon codes at checkout."]] : []),
-            ].map(([t, body]) => (
+                ...(product.notice ? [["Vouchers & coupons", "This item can't be used with vouchers or coupon codes at checkout."]] : []),
+              ] as [string, React.ReactNode][]
+            ).map(([t, body]) => (
               <AccordionItem key={t} value={t} className="border-b">
                 <AccordionTrigger className="py-5 text-[15px] font-semibold hover:no-underline">{t}</AccordionTrigger>
                 <AccordionContent className="max-w-[65ch] pb-5 text-[15px] leading-relaxed text-muted-foreground">{body}</AccordionContent>
@@ -211,7 +242,7 @@ export function ProductDetail({ product, reviews, initialColor }: { product: Pro
         </div>
       </div>
 
-      <ImageZoomDialog name={product.name} color={color} views={VIEWS} index={zoom} onIndex={setZoom} />
+      <ImageZoomDialog name={product.name} color={color} views={views} index={zoom} onIndex={setZoom} />
 
       {/* Mobile sticky add-to-bag */}
       <AnimatePresence>

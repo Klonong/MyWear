@@ -6,7 +6,7 @@ Next.js 16 storefront. Products, bag, checkout, accounts, wishlist, search, revi
 
 ```bash
 # 1. the API (see ../mywear-api/README.md): database, seed, server on :4000
-cd ../mywear-api && npm run db:up && npm run start:dev
+cd ../mywear-api && npm run start:dev
 
 # 2. the storefront on :3000
 npm run dev

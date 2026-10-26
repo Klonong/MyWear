@@ -1,6 +1,6 @@
 export type Gender = "women" | "men" | "kids"
 
-/** `image` is a real cutout for this colour; without it the card draws a placeholder. */
+/** `images` is this colour's photo gallery (first = cover); without photos the card draws a placeholder. */
 export type Color = {
   name: string
   hex: string
@@ -13,11 +13,18 @@ export type Color = {
 
 export type Product = {
   slug: string
+  /** Public product ID, like Uniqlo's style code */
+  code?: string
   name: string
   gender: Gender
   category: string
+  subcategory?: string
   sport: string
   blurb: string
+  /** Overview bullets */
+  features?: string[]
+  /** Washing information */
+  care?: string
   price: number
   salePrice?: number
   rating: number
@@ -46,12 +53,20 @@ export const sizeRange = (p: Product) => {
   return `${s[0]}-${s.at(-1)}`
 }
 
-// ponytail: Picsum stand-ins for campaign photography (no product shots yet)
-export const photo = (id: number, w = 1200, h = 1500) => `https://picsum.photos/id/${id}/${w}/${h}`
-
+/** Campaign tiles: product photos from the R2 bucket, each linking to its product */
 export const EDITORIAL = [
-  { title: "Running x Artist", sub: "A limited collab with printmaker Rina Sato.", photo: 786 },
-  { title: "The everyday layer", sub: "AIRism basics in new seasonal colours.", photo: 669 },
+  {
+    title: "The knit edit",
+    sub: "Soft knits and fine merino for cooler days.",
+    image: "https://pub-b5b9858df58b434298c0e9668c82e05d.r2.dev/products/8916ef05-3dde-4392-9020-657a8d2a7dec.jpg",
+    href: "/product/soft-knit-crew-sweater",
+  },
+  {
+    title: "Light down, all day",
+    sub: "Packs into its own pouch. Warm without the weight.",
+    image: "https://pub-b5b9858df58b434298c0e9668c82e05d.r2.dev/products/8b35c8d0-4076-4162-bd8d-f9ea7e429508.jpg",
+    href: "/product/light-down-puffer-jacket",
+  },
 ]
 
 export const POPULAR_SEARCHES = ["Running tee", "AIRism", "Parka", "Jogger", "Kids fleece"]

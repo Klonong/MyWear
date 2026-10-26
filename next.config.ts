@@ -8,11 +8,8 @@ const nextConfig: NextConfig = {
     return [{ source: "/api/:path*", destination: `${API_URL}/api/:path*` }];
   },
   images: {
-    // ponytail: Picsum stand-ins for campaign photography; swap for the real CDN host
     remotePatterns: [
-      { protocol: "https", hostname: "picsum.photos" },
-      { protocol: "https", hostname: "fastly.picsum.photos" },
-      // Product photos uploaded from /admin land in the Cloudflare R2 bucket's public URL
+      // Product and campaign photos live in the Cloudflare R2 bucket's public URL
       { protocol: "https", hostname: "*.r2.dev", pathname: "/products/**" },
     ],
   },

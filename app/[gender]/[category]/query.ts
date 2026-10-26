@@ -4,7 +4,7 @@ import type { Gender } from "@/lib/data"
 export type Filters = Record<string, string[]>
 
 export const PAGE = 24
-export const FILTER_KEYS = ["category", "size", "colour", "price", "badge", "fit", "sport"]
+export const FILTER_KEYS = ["category", "subcategory", "size", "colour", "price", "badge", "fit", "sport"]
 
 /** Price is single-select: the API filters one min/max range */
 export const PRICE_BANDS: Record<string, [number | undefined, number | undefined]> = {
@@ -29,6 +29,7 @@ export function toQuery(gender: Gender, filters: Filters, sort: string, q: strin
   return {
     gender,
     category: list("category"),
+    subcategory: list("subcategory"),
     size: list("size"),
     colour: list("colour"),
     badge: list("badge"),
